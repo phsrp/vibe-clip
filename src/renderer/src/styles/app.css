@@ -801,6 +801,20 @@ kbd {
   }
 }
 
+/* ---------- Crash screen ---------- */
+.crash {
+  padding: 60px;
+  max-width: 640px;
+  line-height: 1.5;
+}
+.crash pre {
+  padding: 12px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
 /* ---------- Settings / Sources pages ---------- */
 .page {
   grid-column: 2 / -1;

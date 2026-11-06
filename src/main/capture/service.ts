@@ -8,6 +8,7 @@ import { createLogger } from '../logger'
 import { CaptureGraph, outputSize, type VideoConfig } from '../engine/capture'
 import { Outputs } from '../engine/outputs'
 import { osn } from '../engine/obs'
+import { formatDurationShort } from '../util'
 import { availableEncoders, resolveEncoder } from '../engine/encoders'
 import { getSettings } from '../settings'
 import { toast } from '../notify'
@@ -314,8 +315,7 @@ export class CaptureService {
       }
       log.info(`Clip saved: ${file}`)
       const title = game.detail ? `${game.detail} · ${timeLabel(now)}` : timeLabel(now)
-      const secs = this.outputs.config?.replaySeconds ?? 0
-      toast('success', 'Clip saved', `${game.name} · last ${secs >= 60 ? `${Math.round(secs / 6) / 10} min` : `${secs} s`}`)
+      toast('success', 'Clip saved', `${game.name} · last ${formatDurationShort(this.outputs.config?.replaySeconds ?? 0)}`)
       void library.addFile(file, { kind: 'clip', game: game.id, gameName: game.name, title, createdAt: now.getTime() })
     })
   }
