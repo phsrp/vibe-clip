@@ -1,22 +1,48 @@
-// The recording and replay-buffer outputs. They share one video encoder, exactly like OBS's
-// "Advanced" output mode, so having the replay buffer on while recording costs nothing extra.
+// The recording, replay-buffer and streaming outputs.
+// Recording and replay buffer share one video encoder (like OBS's "Advanced" output mode), so
+// having the replay buffer on while recording costs nothing extra. Streaming gets its own encoder
+// so it can use a lower bitrate than your recordings.
 import type * as OSN from 'obs-studio-node'
 import { osn } from './obs'
 import { createLogger } from '../logger'
 import { encoderSettings } from './encoders'
-import { OutputCode, Tracks } from './constants'
+import { OutputCode } from './constants'
 
 const log = createLogger('outputs')
+
+export interface TrackConfig {
+  name: string
+  bitrate: number
+}
 
 export interface OutputConfig {
   video: OSN.IVideo
   encoderId: string
   bitrate: number
-  replaySeconds: number
-  /** Extra encoder settings in OBS's format (e.g. imported from an OBS profile). */
+  /** Extra encoder settings in OBS's format (every option the encoder offers). */
   encoderOverrides?: Record<string, unknown> | null
+  replaySeconds: number
   /** Folder files are first written to. */
   folder: string
+  tracks: TrackConfig[]
+  recordTracks: number
+  replayTracks: number
+  fileFormat: string
+  split: { enabled: boolean; type: 'time' | 'size'; minutes: number; megabytes: number }
+}
+
+export interface StreamConfig {
+  video: OSN.IVideo
+  encoderId: string
+  bitrate: number
+  encoderOverrides?: Record<string, unknown> | null
+  serviceType: string
+  serviceSettings: Record<string, unknown>
+  /** 1-6 */
+  track: number
+  rescale: { width: number; height: number } | null
+  reconnect: { enabled: boolean; delaySec: number; maxRetries: number }
+  delaySec: number
 }
 
 type Signal = OSN.EOutputSignal
@@ -26,6 +52,8 @@ export class OutputError extends Error {}
 
 function describe(s: Signal): string {
   const meaning = OutputCode[s.code] ?? `code ${s.code}`
+  if (s.type === 'streaming' && s.code === -3) return 'The stream key or server was rejected. Check your stream key.'
+  if (s.type === 'streaming' && s.code === -2) return "Couldn't connect to the streaming server. Check your internet and the server address."
   return s.error ? `${meaning} (${s.error})` : meaning
 }
 
@@ -33,16 +61,23 @@ export class Outputs {
   private encoder: OSN.IVideoEncoder | null = null
   private recording: OSN.IAdvancedRecording | null = null
   private replay: OSN.IAdvancedReplayBuffer | null = null
+  private stream: OSN.IAdvancedStreaming | null = null
+  private streamEncoder: OSN.IVideoEncoder | null = null
   private waiters: Waiter[] = []
-  private tracksReady = false
+  private stopping = new Set<string>()
   replayActive = false
   recordingActive = false
   recordingSince: number | null = null
+  streamActive = false
+  streamStarting = false
+  streamSince: number | null = null
   config: OutputConfig | null = null
 
-  /** Called when an output stops on its own (error, disk full...). */
-  onUnexpectedStop: ((type: 'recording' | 'replay-buffer', message: string) => void) | null = null
+  /** Called when an output stops on its own (error, disk full, connection lost...). */
+  onUnexpectedStop: ((type: 'recording' | 'replay-buffer' | 'streaming', message: string) => void) | null = null
   onStateChange: (() => void) | null = null
+  /** Called with each new file when recordings are split into parts. */
+  onFileSplit: ((file: string) => void) | null = null
 
   private handleSignal = (s: Signal): void => {
     log.info(`signal ${s.type}/${s.signal} code=${s.code}${s.error ? ' error=' + s.error : ''}`)
@@ -53,9 +88,15 @@ export class Outputs {
         this.recordingSince = null
       }
       if (s.type === 'replay-buffer') this.replayActive = false
+      if (s.type === 'streaming') {
+        this.streamActive = false
+        this.streamStarting = false
+        this.streamSince = null
+      }
       this.onStateChange?.()
     }
-    // Resolve anyone waiting for this signal; a failing stop rejects them.
+    if (s.type === 'streaming' && s.signal === 'reconnect') this.onStateChange?.()
+    if (s.type === 'recording' && s.signal === 'file_changed') this.onFileSplit?.(this.recording?.lastFile() ?? '')
     for (const w of [...this.waiters]) {
       if (w.type !== s.type) continue
       if (w.signals.includes(s.signal)) {
@@ -68,10 +109,8 @@ export class Outputs {
     }
     const expected = this.stopping.has(s.type)
     if (isStop) this.stopping.delete(s.type)
-    if (isStop && !expected && s.code !== 0) this.onUnexpectedStop?.(s.type as 'recording' | 'replay-buffer', describe(s))
+    if (isStop && !expected && s.code !== 0) this.onUnexpectedStop?.(s.type as 'recording' | 'replay-buffer' | 'streaming', describe(s))
   }
-
-  private stopping = new Set<string>()
 
   private removeWaiter(w: Waiter): void {
     clearTimeout(w.timer)
@@ -94,55 +133,57 @@ export class Outputs {
     })
   }
 
-  private setupTracks(): void {
-    if (this.tracksReady) return
-    // Track numbers are 1-based here. 1 = everything, 2 = desktop audio, 3 = mic.
-    osn.AudioTrackFactory.setAtIndex(osn.AudioTrackFactory.create(192, 'Mixed'), 1)
-    osn.AudioTrackFactory.setAtIndex(osn.AudioTrackFactory.create(192, 'Desktop'), 2)
-    osn.AudioTrackFactory.setAtIndex(osn.AudioTrackFactory.create(192, 'Mic'), 3)
-    this.tracksReady = true
+  /** Sets up the 6 audio tracks (names and bitrates). Track numbers are 1-based here. */
+  private setupTracks(tracks: TrackConfig[]): void {
+    tracks.slice(0, 6).forEach((t, i) => osn.AudioTrackFactory.setAtIndex(osn.AudioTrackFactory.create(t.bitrate, t.name), i + 1))
   }
 
-  /** (Re)creates the encoder and outputs. Only call while nothing is running. */
+  /** (Re)creates the encoder, recording and replay buffer. Only call while they are stopped. */
   configure(cfg: OutputConfig): void {
     if (this.replayActive || this.recordingActive) throw new Error('Stop recording and the replay buffer before changing output settings')
-    this.destroyOutputs()
-    this.setupTracks()
+    this.destroyRecordingOutputs()
+    this.setupTracks(cfg.tracks)
     this.config = cfg
-    // Our defaults, then any exact settings imported from OBS, then the bitrate from Settings.
+    // Our defaults, then the exact settings from the encoder settings screen / OBS import, then the bitrate.
     const settings = { ...encoderSettings(cfg.encoderId, cfg.bitrate), ...(cfg.encoderOverrides ?? {}), bitrate: cfg.bitrate }
-    this.encoder = osn.VideoEncoderFactory.create(cfg.encoderId, 'Vibe Clip Encoder', settings)
+    this.encoder = osn.VideoEncoderFactory.create(cfg.encoderId, 'Recording encoder', settings)
     if (!this.encoder) throw new Error(`Could not create the ${cfg.encoderId} encoder`)
 
     const rec = osn.AdvancedRecordingFactory.create()
     rec.path = cfg.folder
-    rec.format = 'mkv' as OSN.ERecordingFormat // crash-safe while recording; turned into MP4 afterwards
-    rec.fileFormat = '%CCYY-%MM-%DD %hh-%mm-%ss'
+    rec.format = 'mkv' as OSN.ERecordingFormat // crash-safe while recording; converted when it finishes
+    rec.fileFormat = cfg.fileFormat
     rec.prefix = 'Recording'
     rec.overwrite = false
     rec.noSpace = false
     rec.useStreamEncoders = false
     rec.videoEncoder = this.encoder
     rec.video = cfg.video
-    rec.mixer = Tracks.Mixed | Tracks.Desktop | Tracks.Mic
+    rec.mixer = cfg.recordTracks || 1
+    rec.enableFileSplit = cfg.split.enabled
+    if (cfg.split.enabled) {
+      rec.splitType = (cfg.split.type === 'time' ? 0 : 1) as unknown as OSN.ERecSplitType
+      rec.splitTime = cfg.split.minutes * 60
+      rec.splitSize = cfg.split.megabytes
+    }
     rec.signalHandler = this.handleSignal
     this.recording = rec
 
     const rb = osn.AdvancedReplayBufferFactory.create()
     rb.path = cfg.folder
     rb.format = 'mp4' as OSN.ERecordingFormat // written in one go when saved, so MP4 is safe here
-    rb.fileFormat = '%CCYY-%MM-%DD %hh-%mm-%ss'
+    rb.fileFormat = cfg.fileFormat
     rb.prefix = 'Clip'
     rb.overwrite = false
     rb.noSpace = false
     rb.duration = cfg.replaySeconds
     rb.usesStream = false
     rb.video = cfg.video
-    rb.mixer = Tracks.Mixed | Tracks.Desktop | Tracks.Mic
+    rb.mixer = cfg.replayTracks || 1
     rb.signalHandler = this.handleSignal
     rb.recording = rec
     this.replay = rb
-    log.info(`Outputs configured: ${cfg.encoderId} @ ${cfg.bitrate} kbps, replay ${cfg.replaySeconds}s, folder ${cfg.folder}`)
+    log.info(`Outputs configured: ${cfg.encoderId} @ ${cfg.bitrate} kbps, replay ${cfg.replaySeconds}s, tracks rec=${cfg.recordTracks} replay=${cfg.replayTracks}`)
   }
 
   async startReplay(): Promise<void> {
@@ -196,11 +237,104 @@ export class Outputs {
     return this.recording.lastFile()
   }
 
+  /** The file the recording is currently writing. */
+  recordingFile(): string {
+    try {
+      return this.recording?.lastFile() ?? ''
+    } catch {
+      return ''
+    }
+  }
+
   encoderError(): string {
     return this.encoder?.lastError ?? ''
   }
 
-  private destroyOutputs(): void {
+  /** The live recording encoder (for reading its settings list). */
+  getEncoder(): OSN.IVideoEncoder | null {
+    return this.encoder
+  }
+
+  // ----- Streaming -----
+
+  async startStream(cfg: StreamConfig): Promise<void> {
+    if (this.streamActive || this.streamStarting) return
+    this.destroyStream()
+    const settings = { ...encoderSettings(cfg.encoderId, cfg.bitrate), ...(cfg.encoderOverrides ?? {}), bitrate: cfg.bitrate }
+    this.streamEncoder = osn.VideoEncoderFactory.create(cfg.encoderId, 'Streaming encoder', settings)
+    const st = osn.AdvancedStreamingFactory.create()
+    st.video = cfg.video
+    st.videoEncoder = this.streamEncoder
+    st.service = osn.ServiceFactory.create(cfg.serviceType, 'Stream service', cfg.serviceSettings)
+    st.enforceServiceBitrate = false
+    st.audioTrack = cfg.track
+    st.twitchTrack = 0
+    st.rescaling = !!cfg.rescale
+    if (cfg.rescale) {
+      st.outputWidth = cfg.rescale.width
+      st.outputHeight = cfg.rescale.height
+    }
+    const delay = osn.DelayFactory.create()
+    delay.enabled = cfg.delaySec > 0
+    delay.delaySec = cfg.delaySec
+    delay.preserveDelay = true
+    st.delay = delay
+    const reconnect = osn.ReconnectFactory.create()
+    reconnect.enabled = cfg.reconnect.enabled
+    reconnect.retryDelay = cfg.reconnect.delaySec
+    reconnect.maxRetries = cfg.reconnect.maxRetries
+    st.reconnect = reconnect
+    st.network = osn.NetworkFactory.create()
+    st.signalHandler = this.handleSignal
+    this.stream = st
+
+    this.streamStarting = true
+    this.onStateChange?.()
+    const started = this.waitFor('streaming', ['start'], 30000, 'the stream to connect')
+    st.start()
+    try {
+      await started
+      this.streamActive = true
+      this.streamSince = Date.now()
+    } finally {
+      this.streamStarting = false
+      this.onStateChange?.()
+    }
+  }
+
+  async stopStream(): Promise<void> {
+    if (!this.stream || (!this.streamActive && !this.streamStarting)) return
+    this.stopping.add('streaming')
+    const stopped = this.waitFor('streaming', ['stop'], 20000, 'the stream to end')
+    this.stream.stop()
+    await stopped.catch((e) => log.warn('Stream stop', e))
+    this.streamActive = false
+    this.streamSince = null
+    this.onStateChange?.()
+    this.destroyStream()
+  }
+
+  streamStats(): { kbps: number; droppedFrames: number; totalFrames: number } {
+    if (!this.stream || !this.streamActive) return { kbps: 0, droppedFrames: 0, totalFrames: 0 }
+    try {
+      return { kbps: Math.round(this.stream.kbitsPerSec), droppedFrames: this.stream.droppedFrames, totalFrames: this.stream.totalFrames }
+    } catch {
+      return { kbps: 0, droppedFrames: 0, totalFrames: 0 }
+    }
+  }
+
+  private destroyStream(): void {
+    try {
+      if (this.stream) osn.AdvancedStreamingFactory.destroy(this.stream)
+      this.streamEncoder?.release()
+    } catch (e) {
+      log.warn('Error destroying stream output', e)
+    }
+    this.stream = null
+    this.streamEncoder = null
+  }
+
+  private destroyRecordingOutputs(): void {
     try {
       if (this.replay) osn.AdvancedReplayBufferFactory.destroy(this.replay)
       if (this.recording) osn.AdvancedRecordingFactory.destroy(this.recording)
@@ -215,7 +349,8 @@ export class Outputs {
 
   async shutdown(): Promise<void> {
     if (this.recordingActive) await this.stopRecording().catch((e) => log.warn('Stop recording on shutdown', e))
+    await this.stopStream().catch(() => undefined)
     await this.stopReplay()
-    this.destroyOutputs()
+    this.destroyRecordingOutputs()
   }
 }

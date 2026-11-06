@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useOverlay } from '../lib/overlay'
 
 export function ConfirmDialog(p: {
   title: string
@@ -8,6 +9,7 @@ export function ConfirmDialog(p: {
   onConfirm: () => void
   onCancel: () => void
 }) {
+  useOverlay(true)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') p.onCancel()

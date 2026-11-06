@@ -11,22 +11,60 @@ function defaults(): AppSettings {
   return {
     theme: 'default',
     outputFolder: path.join(app.getPath('videos'), 'Vibe Clip'),
+    baseResolution: 'auto',
     outputResolution: '1080',
+    downscaleFilter: 'bicubic',
     fps: 60,
+    fpsDen: 1,
     encoder: 'auto',
     bitrate: 30000,
+    encoderOverrides: null,
+    recordingFormat: 'mp4',
+    filenameFormat: '%CCYY-%MM-%DD %hh-%mm-%ss',
+    recordTracks: 0b000111,
+    splitRecording: { enabled: false, type: 'time', minutes: 15, megabytes: 2048 },
     replayEnabled: true,
     replaySeconds: 180,
-    captureMode: 'auto',
-    monitorId: '',
-    desktopAudio: true,
-    desktopAudioDevice: 'default',
-    mic: true,
-    micDevice: 'default',
-    hotkeys: { saveReplay: 'Alt+F10', toggleRecording: 'Alt+F9', screenshot: 'Alt+F12' },
+    replayTracks: 0b000111,
+    sampleRate: 48000,
+    channels: 'stereo',
+    tracks: [
+      { name: 'Everything', bitrate: 192 },
+      { name: 'Desktop audio', bitrate: 192 },
+      { name: 'Microphone', bitrate: 192 },
+      { name: 'Track 4', bitrate: 160 },
+      { name: 'Track 5', bitrate: 160 },
+      { name: 'Track 6', bitrate: 160 }
+    ],
+    monitoringDevice: 'default',
+    disableDucking: true,
+    colorFormat: 'NV12',
+    colorSpace: '709',
+    colorRange: 'partial',
+    stream: {
+      serviceType: 'rtmp_common',
+      service: 'Twitch',
+      server: 'auto',
+      keyEncrypted: '',
+      encoder: 'same',
+      bitrate: 6000,
+      encoderOverrides: null,
+      track: 1,
+      rescale: 'none',
+      reconnect: { enabled: true, delaySec: 2, maxRetries: 25 },
+      delaySec: 0
+    },
+    hotkeys: {
+      saveReplay: 'Alt+F10',
+      toggleRecording: 'Alt+F9',
+      screenshot: 'Alt+F12',
+      toggleReplay: '',
+      toggleStream: '',
+      muteMic: ''
+    },
     minimizeToTray: true,
-    customGames: [],
-    encoderOverrides: null
+    startWithWindows: false,
+    customGames: []
   }
 }
 
@@ -45,7 +83,14 @@ export function getSettings(): AppSettings {
   try {
     if (fs.existsSync(file())) {
       const saved = JSON.parse(fs.readFileSync(file(), 'utf8'))
-      current = { ...base, ...saved, hotkeys: { ...base.hotkeys, ...(saved.hotkeys ?? {}) } }
+      current = {
+        ...base,
+        ...saved,
+        hotkeys: { ...base.hotkeys, ...(saved.hotkeys ?? {}) },
+        stream: { ...base.stream, ...(saved.stream ?? {}), reconnect: { ...base.stream.reconnect, ...(saved.stream?.reconnect ?? {}) } },
+        splitRecording: { ...base.splitRecording, ...(saved.splitRecording ?? {}) },
+        tracks: base.tracks.map((t, i) => ({ ...t, ...(saved.tracks?.[i] ?? {}) }))
+      }
     }
   } catch (e) {
     log.error('Settings file was unreadable, using defaults', e)

@@ -11,6 +11,7 @@ export interface TrayActions {
   toggleRecording: () => void
   screenshot: () => void
   toggleReplay: () => void
+  toggleStream: () => void
   quit: () => void
 }
 
@@ -37,6 +38,8 @@ export function updateTray(status: CaptureStatus, hotkeys: Hotkeys): void {
   tray.setImage(nativeImage.createFromPath(resourcePath(status.recording ? 'tray-recording.png' : 'tray.png')))
   const parts = ['Vibe Clip']
   if (status.recording) parts.push('● Recording')
+  if (status.stream.live) parts.push('● Live')
+  if (status.activeProfile) parts.push(status.activeProfile)
   parts.push(status.replayActive ? `Replay buffer on (${formatDurationShort(status.replaySeconds)})` : 'Replay buffer off')
   if (status.gameName) parts.push(status.gameName)
   tray.setToolTip(parts.join(' · '))
@@ -47,6 +50,7 @@ export function updateTray(status: CaptureStatus, hotkeys: Hotkeys): void {
       { label: 'Save clip' + hint(hotkeys.saveReplay), click: a.saveClip, enabled: status.replayActive },
       { label: (status.recording ? 'Stop recording' : 'Start recording') + hint(hotkeys.toggleRecording), click: a.toggleRecording },
       { label: 'Take screenshot' + hint(hotkeys.screenshot), click: a.screenshot },
+      { label: (status.stream.live || status.stream.starting ? 'End stream' : 'Go live') + hint(hotkeys.toggleStream), click: a.toggleStream },
       { type: 'separator' },
       { label: 'Replay buffer', type: 'checkbox', checked: status.replayActive, click: a.toggleReplay },
       { type: 'separator' },

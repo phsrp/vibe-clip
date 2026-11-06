@@ -7,7 +7,8 @@ import {
   IconPencil,
   IconPlayerPlay,
   IconTrash,
-  IconMovie
+  IconMovie,
+  IconCut
 } from '@tabler/icons-react'
 import type { CaptureStatus, Clip, Collection, KindFilter, LibrarySnapshot, LibraryView, SortOrder } from '@shared/types'
 import { Sidebar } from '../components/Sidebar'
@@ -22,11 +23,12 @@ interface Props {
   library: LibrarySnapshot
   capture: CaptureStatus
   engineError: string | null
+  onEdit: (clip: Clip) => void
 }
 
 type Menu = { kind: 'clip'; clip: Clip; x: number; y: number } | { kind: 'collection'; col: Collection; x: number; y: number }
 
-export function ClipsPage({ library, capture, engineError }: Props) {
+export function ClipsPage({ library, capture, engineError, onEdit }: Props) {
   const [view, setView] = useState<LibraryView>({ type: 'all' })
   const [filter, setFilter] = useState<KindFilter>('all')
   const [sort, setSort] = useState<SortOrder>('newest')
@@ -86,6 +88,7 @@ export function ClipsPage({ library, capture, engineError }: Props) {
 
   const clipMenu = (clip: Clip): MenuItem[] => [
     { label: 'Play', icon: <IconPlayerPlay size={15} />, onClick: () => setPlaying(clip) },
+    ...(clip.kind !== 'screenshot' ? [{ label: 'Edit (trim, split, crop)', icon: <IconCut size={15} />, onClick: () => onEdit(clip) }] : []),
     { label: 'Rename', icon: <IconPencil size={15} />, onClick: () => setRenaming(clip.id) },
     {
       label: 'Add to collection',
@@ -212,6 +215,10 @@ export function ClipsPage({ library, capture, engineError }: Props) {
           list={visible}
           onNavigate={setPlaying}
           onClose={() => setPlaying(null)}
+          onEdit={(c) => {
+            setPlaying(null)
+            onEdit(c)
+          }}
         />
       )}
       {confirmDelete && (

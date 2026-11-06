@@ -3,6 +3,7 @@ import { Component, type ReactNode } from 'react'
 import '@fontsource-variable/montserrat'
 import './theme/tokens.css'
 import './styles/app.css'
+import './styles/sources.css'
 import App from './App'
 
 /** If part of the UI crashes, show what happened (and a reload button) instead of a blank window. */

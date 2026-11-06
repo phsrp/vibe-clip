@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useOverlay } from '../lib/overlay'
 
 export interface MenuItem {
   label: string
@@ -15,6 +16,7 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x, y })
   const [openSub, setOpenSub] = useState<number | null>(null)
+  useOverlay(true)
 
   useLayoutEffect(() => {
     // Keep the menu inside the window.

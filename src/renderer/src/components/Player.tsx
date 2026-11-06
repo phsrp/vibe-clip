@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconChevronLeft, IconChevronRight, IconFolderOpen, IconX } from '@tabler/icons-react'
+import { IconChevronLeft, IconChevronRight, IconCut, IconFolderOpen, IconX } from '@tabler/icons-react'
 import type { Clip } from '@shared/types'
 import { formatDuration, formatSize } from '../lib/format'
+import { useOverlay } from '../lib/overlay'
 
 interface Props {
   clip: Clip
@@ -9,11 +10,13 @@ interface Props {
   list: Clip[]
   onNavigate: (clip: Clip) => void
   onClose: () => void
+  onEdit: (clip: Clip) => void
 }
 
-export function Player({ clip, list, onNavigate, onClose }: Props) {
+export function Player({ clip, list, onNavigate, onClose, onEdit }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
+  useOverlay(true)
   const index = list.findIndex((c) => c.id === clip.id)
   const prev = index > 0 ? list[index - 1] : null
   const next = index >= 0 && index < list.length - 1 ? list[index + 1] : null
@@ -49,6 +52,11 @@ export function Player({ clip, list, onNavigate, onClose }: Props) {
               {clip.width > 0 && ` · ${clip.width}×${clip.height}`}
             </span>
           </div>
+          {clip.kind !== 'screenshot' && (
+            <button className="btn" onClick={() => onEdit(clip)}>
+              <IconCut size={15} /> Edit
+            </button>
+          )}
           <button className="icon-btn" title="Show in folder" onClick={() => window.api.library.reveal(clip.id)}>
             <IconFolderOpen size={18} />
           </button>

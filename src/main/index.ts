@@ -12,7 +12,9 @@ import { registerMediaScheme, handleMediaProtocol } from './library/protocol'
 import { closeDb } from './library/db'
 import { registerIpc } from './ipc'
 import { send, setMainWindow, setOverlayToast, toast } from './notify'
-import { pauseHotkeys, registerHotkeys, unregisterHotkeys, type HotkeyActions } from './hotkeys'
+import { pauseHotkeys, registerHotkeys, unregisterHotkeys, type ExtraHotkey, type HotkeyActions } from './hotkeys'
+import { flushProfiles, getProfiles, mapSource, onProfilesChange, setProfiles } from './profiles/store'
+import { hidePreview } from './preview'
 import { destroyOverlay, showOverlayToast } from './overlay'
 import { GameDetector, savedIcons } from './games/detector'
 import { CaptureService } from './capture/service'
@@ -140,19 +142,34 @@ app.whenReady().then(async () => {
   setOverlayToast(showOverlayToast)
   createWindow()
 
-  const actions = {
+  const actions: HotkeyActions = {
     saveReplay: () => void capture.saveReplay().catch(report('save the clip')),
     toggleRecording: () => void capture.toggleRecording().catch(report('start or stop recording')),
-    screenshot: () => void capture.screenshot().catch(report('take a screenshot'))
-  } satisfies HotkeyActions
-  registerHotkeys(getSettings().hotkeys, actions)
+    screenshot: () => void capture.screenshot().catch(report('take a screenshot')),
+    toggleReplay: () => void capture.toggleReplay().catch(report('toggle the replay buffer')),
+    toggleStream: () => void capture.toggleStream().catch(report('start or stop the stream')),
+    muteMic: () => {
+      const st = getProfiles()
+      const mic = st.globalAudio.find((s) => s.kind === 'mic')
+      if (!mic) return
+      const muted = !mic.audio.muted
+      setProfiles(mapSource(st, mic.id, (s) => ({ ...s, audio: { ...s.audio, muted } })))
+      showOverlayToast({ id: 0, kind: 'info', title: muted ? 'Microphone muted' : 'Microphone on' })
+    }
+  }
+  const profileHotkeys = (): ExtraHotkey[] =>
+    getProfiles()
+      .profiles.filter((p) => p.hotkey)
+      .map((p) => ({ accelerator: p.hotkey, label: `Switch to "${p.name}"`, action: () => setProfiles({ ...getProfiles(), activeId: p.id }) }))
+  registerHotkeys(getSettings().hotkeys, actions, profileHotkeys())
 
   createTray({
     show: showWindow,
     saveClip: actions.saveReplay,
     toggleRecording: actions.toggleRecording,
     screenshot: actions.screenshot,
-    toggleReplay: () => void capture.toggleReplay().catch(report('toggle the replay buffer')),
+    toggleReplay: actions.toggleReplay,
+    toggleStream: actions.toggleStream,
     quit: () => app.quit()
   })
   capture.onStatus = (s) => {
@@ -161,10 +178,35 @@ app.whenReady().then(async () => {
   }
   updateTray(capture.status(), getSettings().hotkeys)
 
+  // Audio levels for the mixer: sent ~20x a second, only while the window is visible.
+  let lastLevels = 0
+  capture.onLevels = (levels) => {
+    const now = Date.now()
+    if (now - lastLevels < 45 || !win?.isVisible()) return
+    lastLevels = now
+    send('mixer:levels', levels)
+  }
+
+  onProfilesChange((next, prev) => {
+    if (engine.running) {
+      try {
+        capture.applyProfiles(next, prev)
+      } catch (e) {
+        report('apply the profile change')(e)
+      }
+    }
+    send('profiles:changed', next)
+    const hk = (s: typeof next) => s.profiles.map((p) => p.id + p.hotkey + p.name).join()
+    if (hk(next) !== hk(prev)) registerHotkeys(getSettings().hotkeys, actions, profileHotkeys())
+  })
+
   onSettingsChange((next, prev) => {
     if (JSON.stringify(next.hotkeys) !== JSON.stringify(prev.hotkeys)) {
-      registerHotkeys(next.hotkeys, actions)
+      registerHotkeys(next.hotkeys, actions, profileHotkeys())
       updateTray(capture.status(), next.hotkeys)
+    }
+    if (next.startWithWindows !== prev.startWithWindows) {
+      app.setLoginItemSettings({ openAtLogin: next.startWithWindows, args: ['--hidden'] })
     }
     if (next.outputFolder !== prev.outputFolder) library.scan(next.outputFolder).catch((e) => log.error('Library scan failed', e))
     if (engine.running) capture.applySettings(next, prev).catch(report('apply settings'))
@@ -202,6 +244,7 @@ app.on('before-quit', (e) => {
   e.preventDefault()
   quitting = true
   detector.stop()
+  hidePreview()
   capture
     .shutdown()
     .catch((err) => log.error('Shutdown error', err))
@@ -218,6 +261,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  flushProfiles()
   unregisterHotkeys()
   destroyOverlay()
   destroyTray()

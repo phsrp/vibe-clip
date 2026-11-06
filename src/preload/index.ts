@@ -8,7 +8,14 @@ import type {
   EngineStatus,
   GameDefinition,
   LibrarySnapshot,
+  MixerLevels,
   ObsProfilePreview,
+  ProfileSource,
+  ProfilesState,
+  PropertyTarget,
+  SerializedProperty,
+  SourceKind,
+  SourceTypeInfo,
   ToastMessage
 } from '@shared/types'
 
@@ -52,7 +59,46 @@ const api = {
     pickFolder: (): Promise<string | null> => ipcRenderer.invoke('settings:pickFolder'),
     openLogs: (): Promise<void> => ipcRenderer.invoke('settings:openLogs'),
     /** Temporarily turn off global hotkeys while the user is typing a new one. */
-    pauseHotkeys: (paused: boolean): Promise<void> => ipcRenderer.invoke('settings:pauseHotkeys', paused)
+    pauseHotkeys: (paused: boolean): Promise<void> => ipcRenderer.invoke('settings:pauseHotkeys', paused),
+    hotkeyLabels: (): Promise<Record<string, string>> => ipcRenderer.invoke('settings:hotkeyLabels'),
+    monitoringDevices: (): Promise<{ id: string; name: string }[]> => ipcRenderer.invoke('settings:monitoringDevices')
+  },
+
+  profiles: {
+    get: (): Promise<ProfilesState> => ipcRenderer.invoke('profiles:get'),
+    set: (state: ProfilesState): Promise<ProfilesState | undefined> => ipcRenderer.invoke('profiles:set', state),
+    sourceTypes: (): Promise<SourceTypeInfo[]> => ipcRenderer.invoke('profiles:sourceTypes'),
+    newSource: (kind: SourceKind, name: string): Promise<ProfileSource | undefined> => ipcRenderer.invoke('profiles:newSource', kind, name),
+    sourceSize: (id: string): Promise<{ width: number; height: number }> => ipcRenderer.invoke('profiles:sourceSize', id),
+    canvas: (): Promise<{ width: number; height: number }> => ipcRenderer.invoke('profiles:canvas'),
+    filterTypes: (): Promise<{ id: string; label: string; audio: boolean }[]> => ipcRenderer.invoke('profiles:filterTypes'),
+    transitionTypes: (): Promise<{ id: string; label: string }[]> => ipcRenderer.invoke('profiles:transitionTypes'),
+    onChange: (cb: (s: ProfilesState) => void) => listen('profiles:changed', cb)
+  },
+
+  mixer: {
+    audioIds: (): Promise<string[]> => ipcRenderer.invoke('mixer:audioIds'),
+    onLevels: (cb: (l: MixerLevels) => void) => listen('mixer:levels', cb)
+  },
+
+  props: {
+    get: (target: PropertyTarget): Promise<SerializedProperty[] | undefined> => ipcRenderer.invoke('props:get', target),
+    set: (target: PropertyTarget, name: string, value: unknown): Promise<SerializedProperty[] | undefined> =>
+      ipcRenderer.invoke('props:set', target, name, value),
+    button: (target: PropertyTarget, name: string): Promise<void> => ipcRenderer.invoke('props:button', target, name),
+    pickPath: (mode: 'file' | 'save' | 'dir', filter: string, current: string): Promise<string | null> =>
+      ipcRenderer.invoke('props:pickPath', mode, filter, current)
+  },
+
+  preview: {
+    show: (rect: { x: number; y: number; width: number; height: number }, bg: { r: number; g: number; b: number }): void =>
+      ipcRenderer.send('preview:show', rect, bg),
+    hide: (): void => ipcRenderer.send('preview:hide')
+  },
+
+  stream: {
+    toggle: (): Promise<void> => ipcRenderer.invoke('capture:toggleStream'),
+    setKey: (key: string): Promise<void> => ipcRenderer.invoke('stream:setKey', key)
   },
 
   obs: {
