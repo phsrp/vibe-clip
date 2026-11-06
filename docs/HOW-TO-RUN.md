@@ -1,51 +1,62 @@
-# Vibe Clip: how to run and test
+# Vibe Clip: how to install, run and test
 
-## Run it
+## Install (the finished app)
 
-Double-click **`start.bat`**, or open a terminal in this folder and run:
+Run **`release\Vibe Clip Setup 1.0.0.exe`**. Windows may show "Windows protected your PC" because the app
+isn't code-signed: click **More info → Run anyway**. Pick a folder, finish, and Vibe Clip opens.
+It adds Start menu and desktop shortcuts. Uninstall it from Windows Settings → Apps.
 
-```
-npm run dev
-```
+## Run from the source code (for development)
 
-The first time, `npm install` downloads the OBS engine (~300 MB). After that it starts in a few seconds.
-Close the terminal (or use **Quit** in the tray menu) to stop it.
+Double-click **`start.bat`**, or: `npm run dev`. Build a new installer with `npm run dist` (→ `release\`).
 
-## What to test (Phase 1)
+## What to test
 
+### Clips (the library)
 | What | How | What you should see |
 |---|---|---|
-| Engine | Start the app | Top right says **Replay 3:00** with a pulsing dot. If the engine fails, a red banner explains why. |
-| Save a clip | Play something, press **Alt+F10** | A "Clip saved" pop-up (top-right of your screen if the app isn't focused). The clip appears under **Today** with a thumbnail. |
-| Record | Click **Record** (or **Alt+F9**), wait, click **Stop** | A timer while recording, then "Recording saved". It shows up as an MP4. |
-| Screenshot | Press **Alt+F12** | "Screenshot saved"; it shows under the screenshots filter. |
-| Game detection | Open osu!, CS2 or Geometry Dash, wait ~5 s | The status pill shows the game name. Clips go into that game's folder and sidebar entry; osu! clips are named after the song. |
-| Play a clip | Double-click a card | Built-in player. Ctrl+← / Ctrl+→ for previous/next, Esc closes. |
-| Rename / delete / collections | Right-click a card | Rename inline; Delete moves the file to the Recycle Bin; "Add to collection" after you make one with **New collection**. |
-| Search | Ctrl+F | Filters by title and game. |
-| Tray | Close the window | The app keeps running in the tray (purple circle by the clock). Right-click it for Save clip / Record / Quit. |
-| Themes | Settings → Appearance | Default Dark, Gruvbox Dark, Rosé Pine. |
-| Import from OBS | Settings → Import from OBS → Find OBS profiles | A list of what will be imported; click **Import these settings**. |
+| Save a clip | Play something, press **Alt+F10** | "Clip saved" pop-up (top-right of your screen). The clip appears under **Today**. |
+| Record | **Record** button or **Alt+F9**, then stop | A timer while recording, then "Recording saved". |
+| Screenshot | **Alt+F12** | "Screenshot saved", shown under the screenshots filter. |
+| Game detection | Open osu!, CS2 or Geometry Dash | The status pill shows the game; clips go under that game; osu! clips are named after the song. |
+| Play / browse | Double-click a card | Built-in player. Ctrl+← / → for previous/next. |
+| Organise | Right-click a card | Rename, add to collection, show in folder, delete (to Recycle Bin), **Edit**. |
+
+### Editor
+Right-click a clip → **Edit** (or the Edit button in the player).
+Drag the ends of a part to trim · **S** splits at the playhead · **Delete** removes the selected part · **C** crops
+(choose 16:9, 9:16, 1:1...) · **Ctrl+Z / Ctrl+Y** undo/redo · **Save as new clip** exports (the original is never changed).
+
+### Sources (profiles = what OBS calls scenes)
+| What | How |
+|---|---|
+| Switch profile | Click a profile on the left (with the transition you picked). Each profile can have its own hotkey. |
+| Add a source | **Add** → display, window, game capture, auto game capture, webcam, mic, desktop/app audio, image, slideshow, text, media, browser, color. |
+| Change a source | Click it: **Settings** (every OBS option), **Position** (fit, stretch, corners, exact position/size/crop), **Audio** (volume, monitoring, sync, which of the 6 tracks), **Filters** (all OBS filters: chroma key, color correction, noise suppression, compressor...). |
+| Mixer | Volume faders with live meters, mute, and always-on audio devices (desktop audio, mics, one app). |
+| Live preview | The picture at the top is exactly what gets recorded. It pauses while a menu is open. |
+
+### Settings
+General · Video (canvas, output, downscale filter, FPS incl. 59.94) · Recording (encoder + every encoder option, format,
+tracks, file names, split files) · Replay buffer · Audio (sample rate, channels, monitoring device, track names/bitrates) ·
+Streaming (Twitch/YouTube/… or custom server, stream key stored encrypted, separate stream encoder, reconnect, delay) ·
+Advanced (color format/space/range) · Hotkeys · Games · **Import from OBS** (your OBS settings and your scenes as profiles).
+
+### Streaming
+Set up Settings → Streaming, then **Go live** at the top of the Clips page (or the tray menu / a hotkey).
+The button shows time live and bitrate; **End stream** stops it.
 
 ## Where things are
-
 - **Clips**: `Videos\Vibe Clip\<Game>\` (change in Settings)
-- **Settings, database, thumbnails, logs**: `%APPDATA%\Vibe Clip\`
-- **App log**: Settings → **Open logs** (`logs\app.log`)
-- **OBS engine log**: `%APPDATA%\Vibe Clip\obs-data\node-obs\logs\`
+- **Settings, profiles, database, thumbnails, logs**: `%APPDATA%\Vibe Clip\`
+- **App log**: Settings → **Open logs** · **OBS engine log**: `%APPDATA%\Vibe Clip\obs-data\node-obs\logs\`
 
 ## If something goes wrong
+- **Black recording**: checked automatically; the app switches capture method and tells you if it's still black.
+- **Hotkey doesn't work**: another app may use it; a message says which. Pick different keys.
+- **Game records your desktop instead**: game capture couldn't hook in (anti-cheat, or the game runs as admin).
+- **Stream won't start**: the message says whether the key or the connection is the problem.
+- Send `app.log` when asking for help.
 
-- **Black recording**: the app checks this automatically and switches capture method. If it still warns, see the message for what to do.
-- **Hotkey doesn't work**: another app may use it; Settings shows an error toast. Pick different keys.
-- **Game shows your desktop instead of the game**: game capture couldn't hook in (anti-cheat, or the game runs as administrator). Clips still record the display.
-- Send the `app.log` file when asking for help.
-
-## Roll back
-
-Every step is a git commit: `git log --oneline` lists them, `git checkout <id>` goes back.
-
-## License note
-
-The OBS engine (obs-studio-node) is GPL-2.0. That's fine for personal use; if you ever share the app,
-its source must be shared under the GPL too.
+## License
+The OBS engine (obs-studio-node) is GPL-2.0: fine for personal use; if you share the app, its source must be shared too.

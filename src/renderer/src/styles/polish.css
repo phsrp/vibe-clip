@@ -1,0 +1,357 @@
+/* Polish: hover feedback, small animations and page transitions.
+   Everything here is decoration: removing this file leaves a fully working app. */
+
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ----- Page transitions ----- */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+.main,
+.page,
+.sidebar {
+  animation: page-in 0.28s var(--ease-out);
+}
+.sidebar {
+  animation-duration: 0.22s;
+}
+
+/* ----- Icon rail ----- */
+.rail-item {
+  position: relative;
+}
+.rail-item::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  width: 3px;
+  height: 0;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  transform: translateY(-50%);
+  transition: height 0.25s var(--ease-spring);
+}
+.rail-item.active::before {
+  height: 22px;
+}
+.rail-item:hover:not(.active)::before {
+  height: 8px;
+}
+.rail-icon {
+  transition: background 0.2s, transform 0.25s var(--ease-spring);
+}
+.rail-icon svg {
+  transition: transform 0.3s var(--ease-spring);
+}
+.rail-item:hover .rail-icon {
+  background: var(--surface-hover);
+}
+.rail-item.active:hover .rail-icon {
+  background: var(--surface-active);
+}
+.rail-item:hover .rail-icon svg {
+  transform: translateY(-1px) scale(1.12);
+}
+.rail-item:active .rail-icon {
+  transform: scale(0.9);
+}
+.rail-item:last-child:hover .rail-icon svg {
+  transform: rotate(45deg) scale(1.08);
+}
+.rail-label {
+  transition: color 0.2s;
+}
+
+/* ----- Sidebar items ----- */
+.side-item {
+  transition: background 0.18s, color 0.18s;
+}
+.side-icon {
+  transition: transform 0.25s var(--ease-spring), color 0.18s;
+}
+.side-item:hover .side-icon {
+  transform: scale(1.15);
+  color: var(--text);
+}
+.side-count {
+  transition: color 0.18s;
+}
+.side-item:hover .side-count,
+.side-item.active .side-count {
+  color: var(--text-muted);
+}
+.side-item.active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* ----- Clip cards ----- */
+.card {
+  transition: background 0.2s, transform 0.25s var(--ease-out);
+}
+.card:hover {
+  transform: translateY(-3px);
+}
+.thumb {
+  transition: box-shadow 0.25s var(--ease-out);
+}
+.card:hover .thumb {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--accent-soft);
+}
+.thumb img,
+.thumb-placeholder {
+  transition: transform 0.45s var(--ease-out), filter 0.25s;
+}
+.card:hover .thumb img {
+  transform: scale(1.05);
+}
+.play-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.35), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.play-overlay span {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  transform: scale(0.7);
+  transition: transform 0.3s var(--ease-spring);
+}
+.card:hover .play-overlay {
+  opacity: 1;
+}
+.card:hover .play-overlay span {
+  transform: scale(1);
+}
+.badge {
+  transition: transform 0.2s var(--ease-out);
+}
+.card:hover .badge {
+  transform: translateY(-2px);
+}
+.grid .card {
+  /* "backwards" so the animation lets go of transform afterwards (hover lift keeps working). */
+  animation: pop-in 0.3s var(--ease-out) backwards;
+}
+.grid .card:nth-child(2) {
+  animation-delay: 0.02s;
+}
+.grid .card:nth-child(3) {
+  animation-delay: 0.04s;
+}
+.grid .card:nth-child(4) {
+  animation-delay: 0.06s;
+}
+.grid .card:nth-child(5) {
+  animation-delay: 0.08s;
+}
+.grid .card:nth-child(n + 6) {
+  animation-delay: 0.1s;
+}
+.day-header .chev {
+  transition: transform 0.25s var(--ease-spring);
+}
+.day-header:hover .day-label {
+  color: var(--accent);
+}
+.day-label {
+  transition: color 0.18s;
+}
+
+/* ----- Buttons ----- */
+.btn,
+.icon-btn,
+.tab,
+.status-pill,
+.nav-chip,
+.seg button,
+.hotkey,
+.toggle {
+  transition: background 0.18s, color 0.18s, border-color 0.18s, transform 0.15s var(--ease-out), box-shadow 0.18s;
+}
+.btn:active:not(:disabled),
+.icon-btn:active:not(:disabled),
+.tab:active,
+.status-pill:active {
+  transform: scale(0.96);
+}
+.btn svg,
+.tab svg,
+.icon-btn svg {
+  transition: transform 0.25s var(--ease-spring);
+}
+.btn:hover:not(:disabled) svg,
+.tab:hover svg {
+  transform: scale(1.12);
+}
+.icon-btn:hover svg {
+  transform: scale(1.15);
+}
+.btn-accent:hover:not(:disabled) {
+  box-shadow: 0 4px 14px var(--accent-soft);
+}
+.tab {
+  position: relative;
+}
+.tab::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transition: transform 0.25s var(--ease-spring);
+}
+.tab.active::after {
+  transform: scaleX(1);
+}
+.btn-record.active {
+  animation: rec-pulse 1.6s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--record) 55%, transparent);
+  }
+  60% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+.toggle .knob {
+  transition: transform 0.25s var(--ease-spring), background 0.18s;
+}
+.toggle:active .knob {
+  width: 20px;
+}
+
+/* ----- Menus, dialogs, player ----- */
+.menu {
+  animation: pop-in 0.14s var(--ease-out);
+  transform-origin: top left;
+}
+.menu-item {
+  transition: background 0.12s, padding 0.15s var(--ease-out);
+}
+.menu-item:hover:not(:disabled) {
+  padding-left: 11px;
+}
+.modal-backdrop {
+  animation: fade-in 0.18s ease-out;
+}
+.dialog,
+.player {
+  animation: pop-in 0.22s var(--ease-out);
+}
+.nav-btn {
+  transition: opacity 0.15s, transform 0.2s var(--ease-spring), background 0.15s;
+}
+.nav-btn:hover {
+  transform: scale(1.12);
+  background: var(--accent);
+}
+
+/* ----- Sources page ----- */
+.source-row,
+.filter-row,
+.strip {
+  transition: background 0.15s, border-color 0.15s, transform 0.2s var(--ease-out);
+}
+.source-row:hover .source-icon {
+  color: var(--accent);
+  transform: scale(1.12);
+}
+.source-icon {
+  transition: transform 0.25s var(--ease-spring), color 0.18s;
+}
+.strip:hover {
+  transform: translateX(2px);
+}
+.track-chip {
+  transition: border-color 0.15s, color 0.15s, transform 0.15s var(--ease-out);
+}
+.track-chip:hover {
+  transform: translateY(-1px);
+}
+.track-chip b {
+  transition: background 0.2s, color 0.2s, transform 0.25s var(--ease-spring);
+}
+.track-chip.on b {
+  transform: scale(1.08);
+}
+.inspector-body {
+  animation: fade-in 0.2s ease-out;
+}
+
+/* ----- Editor ----- */
+.icon-btn.big {
+  transition: background 0.18s, transform 0.25s var(--ease-spring), box-shadow 0.2s;
+}
+.icon-btn.big:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 16px var(--accent-soft);
+}
+.tl-handle::after {
+  transition: height 0.2s var(--ease-spring);
+}
+.tl-handle:hover::after {
+  height: 30px;
+  margin-top: -15px;
+}
+.crop-h {
+  transition: transform 0.15s var(--ease-spring);
+}
+.crop-h:hover {
+  transform: scale(1.3);
+}
+
+/* ----- Toasts ----- */
+.toast {
+  animation: toast-in 0.3s var(--ease-spring);
+}
+@keyframes toast-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+/* Respect Windows' "Animation effects" off setting. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.001ms !important;
+  }
+}
