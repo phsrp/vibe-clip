@@ -12,6 +12,7 @@ import { registerIpc } from './ipc'
 import { send, setMainWindow, setOverlayToast, toast } from './notify'
 import { pauseHotkeys, registerHotkeys, unregisterHotkeys, type HotkeyActions } from './hotkeys'
 import { destroyOverlay, showOverlayToast } from './overlay'
+import { GameDetector, savedIcons } from './games/detector'
 import { CaptureService } from './capture/service'
 import type { EngineStatus } from '@shared/types'
 
@@ -67,6 +68,7 @@ function createWindow(): void {
 }
 
 const capture = new CaptureService()
+const detector = new GameDetector()
 capture.onStatus = (s) => send('capture:status', s)
 let quitting = false
 
@@ -115,6 +117,18 @@ app.whenReady().then(async () => {
       toast('error', "Recording couldn't be set up", engine.error)
     }
   }
+
+  // Game detection: tags clips with the game and switches to game capture.
+  library.setGameIcons(savedIcons())
+  detector.onIcon = () => library.setGameIcons(savedIcons())
+  detector.onTick = (game) => {
+    try {
+      if (engine.running) capture.updateGame(game)
+    } catch (e) {
+      log.error('Game update failed', e)
+    }
+  }
+  detector.start()
 })
 
 // Stop recording cleanly (so the file is saved) before the app exits.
@@ -122,6 +136,7 @@ app.on('before-quit', (e) => {
   if (quitting) return
   e.preventDefault()
   quitting = true
+  detector.stop()
   capture
     .shutdown()
     .catch((err) => log.error('Shutdown error', err))

@@ -14,6 +14,7 @@ import * as library from '../library/library'
 import { remux } from '../library/media'
 import { DESKTOP } from '../games/games'
 import { DisplayMethod } from '../engine/constants'
+import { detailFromTitle, parseWindowString, type RunningGame } from '../games/detector'
 
 const log = createLogger('capture')
 
@@ -198,6 +199,7 @@ export class CaptureService {
   async applySettings(next: AppSettings, prev: AppSettings): Promise<void> {
     if (!this.graph) return
     this.graph.setAudio(this.audioConfig(next))
+    if (next.captureMode !== prev.captureMode) this.applyCaptureMode(next.captureMode)
     const needsRestart = RESTART_KEYS.some((k) => JSON.stringify(next[k]) !== JSON.stringify(prev[k]))
     if (needsRestart) {
       if (this.outputs.recordingActive) {
@@ -321,9 +323,74 @@ export class CaptureService {
     toast('info', 'Screenshots arrive in Step 6')
   }
 
-  setGame(game: ActiveGame | null): void {
-    this.game = game
-    this.emit()
+  // ----- Game detection (Step 5) -----
+
+  private gameWindow: string | null = null
+  private hookWarned = new Set<string>()
+  private hookCheck: NodeJS.Timeout | null = null
+
+  /** Called every few seconds by the game detector with the running game (or null). */
+  updateGame(running: RunningGame | null): void {
+    if (!running) {
+      if (this.game) {
+        this.game = null
+        this.gameWindow = null
+        this.graph?.setGame(null)
+        this.emit()
+      }
+      return
+    }
+    const changed = this.game?.id !== running.def.id
+    // Find the game's window among the ones OBS can capture.
+    let win: { raw: string; title: string } | null = null
+    try {
+      const match = (this.graph?.listGameWindows() ?? []).find((w) => parseWindowString(w.id).exe.toLowerCase() === running.exe.toLowerCase())
+      if (match) win = { raw: match.id, title: parseWindowString(match.id).title }
+    } catch (e) {
+      log.warn('Could not list game windows', e)
+    }
+    const detail = win ? detailFromTitle(win.title, running.def.name) : null
+    this.game = { id: running.def.id, name: running.def.name, detail }
+    if (changed) this.emit()
+
+    if (getSettings().captureMode === 'auto' && win && win.raw !== this.gameWindow) {
+      // Only switch the hook target when the window itself changes, not just its title.
+      const sameWindow = this.gameWindow && parseWindowString(this.gameWindow).cls === parseWindowString(win.raw).cls
+      if (!sameWindow) {
+        this.graph?.setGame(win.raw)
+        this.scheduleHookCheck(running.def.id, running.def.name)
+      }
+      this.gameWindow = win.raw
+    }
+  }
+
+  /** A few seconds after targeting a game, check the hook worked; if not, explain what's happening. */
+  private scheduleHookCheck(id: string, name: string): void {
+    if (this.hookCheck) clearTimeout(this.hookCheck)
+    this.hookCheck = setTimeout(() => {
+      const size = this.graph?.gameSize()
+      if (!size || this.game?.id !== id) return
+      if (size.width > 0) {
+        log.info(`Game capture hooked into ${name} (${size.width}x${size.height})`)
+      } else if (!this.hookWarned.has(id)) {
+        this.hookWarned.add(id)
+        log.warn(`Game capture could not hook into ${name}`)
+        toast(
+          'info',
+          `Recording your display for ${name}`,
+          "Game capture couldn't hook into the game yet (it may still be loading, or it runs as administrator). Clips will show your whole display instead."
+        )
+      }
+    }, 8000)
+  }
+
+  /** Applies the "Capture" setting (auto game capture vs display only). */
+  private applyCaptureMode(mode: AppSettings['captureMode']): void {
+    if (mode === 'display') {
+      this.graph?.setGame(null)
+      this.gameWindow = null
+    }
+    // In "auto" mode the next detector tick picks the game up again.
   }
 
   getGraph(): CaptureGraph | null {
