@@ -4,7 +4,9 @@ import { app, BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { createLogger, logPath } from './logger'
-import { startEngine, stopEngine, osn } from './engine/obs'
+import { execFile } from 'child_process'
+import { engineDir, startEngine, stopEngine, osn } from './engine/obs'
+import { applyUpdateSchedule, installUpdate, setupUpdater, updateReady } from './updater'
 import { availableEncoders } from './engine/encoders'
 import { getSettings, onSettingsChange } from './settings'
 import * as library from './library/library'
@@ -141,6 +143,12 @@ app.whenReady().then(async () => {
   registerIpc({ engine: () => engine, capture, pauseHotkeys })
   setOverlayToast(showOverlayToast)
   createWindow()
+  // "Restart now" on an update: save/stop everything and wait for the engine before installing.
+  setupUpdater(async () => {
+    shuttingDown = true
+    await shutdownAll()
+    await waitForEngineExit()
+  })
 
   const actions: HotkeyActions = {
     saveReplay: () => void capture.saveReplay().catch(report('save the clip')),
@@ -206,6 +214,7 @@ app.whenReady().then(async () => {
       registerHotkeys(next.hotkeys, actions, profileHotkeys())
       updateTray(capture.status(), next.hotkeys)
     }
+    if (next.autoUpdate !== prev.autoUpdate) applyUpdateSchedule()
     if (next.startWithWindows !== prev.startWithWindows) {
       app.setLoginItemSettings({ openAtLogin: next.startWithWindows, args: ['--hidden'] })
     }
@@ -239,21 +248,59 @@ app.whenReady().then(async () => {
   detector.start()
 })
 
-// Stop recording cleanly (so the file is saved) before the app exits.
-app.on('before-quit', (e) => {
-  if (quitting && !capture.outputs.recordingActive && !capture.outputs.replayActive) return
-  e.preventDefault()
+/** Waits until this app's obs64.exe has exited (its files can't be replaced by an update while it runs). */
+async function waitForEngineExit(timeoutMs = 10000): Promise<void> {
+  const dir = engineDir().replace(/'/g, "''")
+  const count = () =>
+    new Promise<number>((resolve) =>
+      execFile(
+        'powershell',
+        ['-NoProfile', '-NonInteractive', '-Command', `@(Get-Process obs64 -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '${dir}*' }).Count`],
+        { windowsHide: true, timeout: 5000 },
+        (err, out) => resolve(err ? 0 : Number(out.trim()) || 0)
+      )
+    )
+  const end = Date.now() + timeoutMs
+  while (Date.now() < end) {
+    if ((await count()) === 0) return
+    await new Promise((r) => setTimeout(r, 400))
+  }
+  log.warn('The OBS engine took too long to exit')
+}
+
+let engineStopped = false
+/** Stops everything cleanly: saves a running recording, stops outputs and the OBS engine. */
+async function shutdownAll(): Promise<void> {
   quitting = true
   detector.stop()
   hidePreview()
-  capture
-    .shutdown()
-    .catch((err) => log.error('Shutdown error', err))
-    .finally(() => {
-      capture.outputs.recordingActive = false
-      capture.outputs.replayActive = false
-      app.quit()
+  await capture.shutdown().catch((err) => log.error('Shutdown error', err))
+  capture.outputs.recordingActive = false
+  capture.outputs.replayActive = false
+  flushProfiles()
+  unregisterHotkeys()
+  if (!engineStopped) {
+    stopEngine()
+    engineStopped = true
+  }
+}
+
+// Stop recording cleanly (so the file is saved) before the app exits. If an update was
+// downloaded and you chose "Later", it installs now (quietly), like the other apps.
+let shuttingDown = false
+app.on('before-quit', (e) => {
+  if (shuttingDown) return
+  e.preventDefault()
+  shuttingDown = true
+  shutdownAll()
+    .then(async () => {
+      if (updateReady()) {
+        await waitForEngineExit()
+        await installUpdate(true, false)
+      }
     })
+    .catch((err) => log.error('Shutdown error', err))
+    .finally(() => app.quit())
 })
 
 // The tray keeps the app alive when the window is closed.
@@ -266,6 +313,6 @@ app.on('will-quit', () => {
   unregisterHotkeys()
   destroyOverlay()
   destroyTray()
-  stopEngine()
+  if (!engineStopped) stopEngine()
   closeDb()
 })

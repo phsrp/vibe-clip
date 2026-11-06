@@ -1,0 +1,4 @@
+- First release of Vibe Clip: OBS-powered recording, an always-on replay buffer and a clip library
+- Profiles with every OBS source, filters, transitions, a live preview and an audio mixer with 6 tracks
+- Import your OBS settings and scenes, edit clips (trim, split, crop) and stream to Twitch, YouTube and more
+- Automatic updates: Vibe Clip tells you when a new version is out and asks before downloading

@@ -19,7 +19,8 @@ import type {
   SerializedProperty,
   SourceKind,
   SourceTypeInfo,
-  ToastMessage
+  ToastMessage,
+  UpdateStatus
 } from '@shared/types'
 
 function listen<T>(channel: string, cb: (value: T) => void): () => void {
@@ -99,6 +100,17 @@ const api = {
       ipcRenderer.send('preview:show', rect, bg),
     hide: (): void => ipcRenderer.send('preview:hide')
   },
+
+  update: {
+    status: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:status'),
+    check: (): Promise<void> => ipcRenderer.invoke('update:check'),
+    download: (): Promise<void> => ipcRenderer.invoke('update:download'),
+    snooze: (): Promise<void> => ipcRenderer.invoke('update:snooze'),
+    install: (): Promise<void> => ipcRenderer.invoke('update:install'),
+    debug: (s: UpdateStatus): Promise<void> => ipcRenderer.invoke('update:debug', s),
+    onStatus: (cb: (s: UpdateStatus) => void) => listen('update:status', cb)
+  },
+  appVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
 
   editor: {
     strip: (clipId: number): Promise<EditStrip | undefined> => ipcRenderer.invoke('editor:strip', clipId),

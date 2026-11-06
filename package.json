@@ -11,9 +11,11 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "dist": "electron-vite build && electron-builder --win --x64"
+    "dist": "electron-vite build && electron-builder --win --x64 --publish never",
+    "release": "electron-vite build && electron-builder --win --x64 --publish always"
   },
   "dependencies": {
+    "electron-updater": "6.8.11",
     "obs-studio-node": "https://s3-us-west-2.amazonaws.com/obsstudionodes3.streamlabs.com/osn-0.27.33-release-win64.tar.gz"
   },
   "devDependencies": {
@@ -81,7 +83,19 @@
       "installerIcon": "resources/icon.ico",
       "uninstallerIcon": "resources/icon.ico",
       "runAfterFinish": true,
-      "artifactName": "Vibe Clip Setup ${version}.exe"
-    }
+      "artifactName": "Vibe-Clip-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "phsrp",
+        "repo": "Vibe-Clip",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/phsrp/Vibe-Clip.git"
   }
 }

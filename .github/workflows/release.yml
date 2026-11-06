@@ -1,0 +1,56 @@
+# Builds the Windows installer and publishes it as a GitHub Release whenever you push a version tag
+# (for example v1.0.1). Installed copies of Vibe Clip then find the new version and offer to update.
+# (Same scheme as Vibe Editing Suite.)
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Also downloads the OBS engine (obs-studio-node prebuilt from Streamlabs, ~300 MB).
+      - name: Install
+        run: npm ci
+
+      # make sure the Electron binary is in place
+      - name: Fetch binaries
+        run: node node_modules/electron/install.js
+
+      # The tag must match package.json (v1.0.1 <-> "version": "1.0.1"), or installed apps won't see the update.
+      - name: Check version
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("v$v" -ne "${{ github.ref_name }}") { Write-Error "Tag ${{ github.ref_name }} does not match package.json version $v"; exit 1 }
+
+      # Create the release first. (If the build tool creates it while uploading several files at once,
+      # GitHub ends up with duplicate releases, each holding only some of the files.)
+      - name: Create the release
+        shell: pwsh
+        run: |
+          gh release view "${{ github.ref_name }}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --notes-file RELEASE_NOTES.md
+          }
+          $global:LASTEXITCODE = 0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

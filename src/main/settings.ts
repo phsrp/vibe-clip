@@ -64,6 +64,7 @@ function defaults(): AppSettings {
     },
     minimizeToTray: true,
     startWithWindows: false,
+    autoUpdate: true,
     customGames: []
   }
 }

@@ -46,6 +46,21 @@ Advanced (color format/space/range) · Hotkeys · Games · **Import from OBS** (
 Set up Settings → Streaming, then **Go live** at the top of the Clips page (or the tray menu / a hotkey).
 The button shows time live and bitrate; **End stream** stops it.
 
+## Updates (same scheme as Vibe Editing Suite and Hearth)
+
+The installed app checks GitHub Releases (`phsrp/Vibe-Clip`) a couple of seconds after it opens and **asks** before
+downloading: **Download** → **Restart now** (or **Later**: it installs when you next quit). **Remind me later** hides
+it for 4 hours; an "Update x.y" badge stays in the title bar. Settings → General has **Automatic updates** and
+**Check for updates**. Before installing, a running recording is saved and the OBS engine is stopped.
+
+**Publishing a new version:**
+1. Bump `version` in `package.json` (e.g. 1.0.1) and rewrite `RELEASE_NOTES.md` (short "- " lines: they become the
+   release text and the popup's "What's new" list).
+2. Commit, then `git push origin main`.
+3. `git tag -a v1.0.1 -m "v1.0.1"` and `git push origin v1.0.1`.
+4. GitHub Actions (`.github/workflows/release.yml`) builds and publishes the release. The tag must equal
+   `v` + the package.json version (the workflow checks this).
+
 ## Where things are
 - **Clips**: `Videos\Vibe Clip\<Game>\` (change in Settings)
 - **Settings, profiles, database, thumbnails, logs**: `%APPDATA%\Vibe Clip\`

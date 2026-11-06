@@ -141,6 +141,8 @@ export interface AppSettings {
   // ----- App -----
   minimizeToTray: boolean
   startWithWindows: boolean
+  /** Check for a new version when the app opens (it always asks before downloading). */
+  autoUpdate: boolean
   /** Extra games added by the user. */
   customGames: GameDefinition[]
   // ----- Phase 1 capture settings (moved into profiles; only read once for migration) -----
@@ -336,6 +338,17 @@ export interface StreamStatus {
   kbps: number
   droppedFrames: number
   totalFrames: number
+}
+
+// ----- Updates -----
+
+export interface UpdateStatus {
+  state: 'idle' | 'dev' | 'checking' | 'uptodate' | 'available' | 'snoozed' | 'downloading' | 'ready' | 'error'
+  version?: string
+  current?: string
+  notes?: string[]
+  percent?: number
+  during?: 'check' | 'download'
 }
 
 // ----- Clip editor -----

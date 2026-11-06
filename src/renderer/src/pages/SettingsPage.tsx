@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconFileText, IconFolder, IconKey, IconPlus, IconTrash } from '@tabler/icons-react'
-import type { AppSettings, CaptureOptions, EngineStatus, GameDefinition, Hotkeys } from '@shared/types'
+import { IconFileText, IconFolder, IconKey, IconPlus, IconRefresh, IconTrash } from '@tabler/icons-react'
+import type { AppSettings, CaptureOptions, EngineStatus, GameDefinition, Hotkeys, UpdateStatus } from '@shared/types'
 import { Field, HotkeyInput, NumberInput, Section, Select, Toggle } from '../components/Controls'
 import { PropertyForm } from '../components/PropertyForm'
 import { THEMES } from '../theme/themes'
@@ -10,6 +10,19 @@ interface Props {
   settings: AppSettings
   onChange: (patch: Partial<AppSettings>) => void
   engine: EngineStatus | null
+  update: UpdateStatus
+  version: string
+}
+
+function updateResult(u: UpdateStatus): string {
+  if (u.state === 'checking') return 'Checking…'
+  if (u.state === 'uptodate') return "You're up to date."
+  if (u.state === 'error') return 'Could not check (are you online?).'
+  if (u.state === 'dev') return 'Updates only work in the installed app.'
+  if (u.state === 'available' || u.state === 'snoozed') return `Version ${u.version} is available.`
+  if (u.state === 'downloading') return `Downloading ${u.version}… ${u.percent ?? 0}%`
+  if (u.state === 'ready') return `Version ${u.version} is ready: it installs when you quit, or restart from the popup.`
+  return ''
 }
 
 const SECTIONS = [
@@ -105,7 +118,7 @@ function TrackPicker({ value, names, onChange }: { value: number; names: AppSett
   )
 }
 
-export function SettingsPage({ settings: s, onChange, engine }: Props) {
+export function SettingsPage({ settings: s, onChange, engine, update, version }: Props) {
   const [options, setOptions] = useState<CaptureOptions | null>(null)
   const [monitors, setMonitors] = useState<{ id: string; name: string }[]>([])
   const [labels, setLabels] = useState<Record<string, string>>({})
@@ -159,6 +172,17 @@ export function SettingsPage({ settings: s, onChange, engine }: Props) {
             </Field>
             <Field label="Start with Windows" hint="Starts hidden in the tray, with the replay buffer on.">
               <Toggle checked={s.startWithWindows} onChange={(v) => onChange({ startWithWindows: v })} />
+            </Field>
+            <Field
+              label="Automatic updates"
+              hint="Checks for a new version when Vibe Clip opens. It always asks before downloading anything."
+            >
+              <Toggle checked={s.autoUpdate} onChange={(v) => onChange({ autoUpdate: v })} />
+            </Field>
+            <Field label={`Version ${version}`} hint={updateResult(update) || 'New versions come from GitHub Releases.'}>
+              <button className="btn" disabled={update.state === 'checking'} onClick={() => window.api.update.check()}>
+                <IconRefresh size={15} /> Check for updates
+              </button>
             </Field>
             <Field label="Log file" hint="Useful when something goes wrong.">
               <button className="btn" onClick={() => window.api.settings.openLogs()}>
