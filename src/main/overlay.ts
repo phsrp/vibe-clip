@@ -44,12 +44,16 @@ function ensureWindow(): BrowserWindow {
 export function showOverlayToast(msg: ToastMessage): void {
   const c = COLORS[getSettings().theme] ?? COLORS.default
   const stripe = msg.kind === 'success' ? c.ok : msg.kind === 'error' ? c.err : c.accent
+  // How long it stays, then it slides back out to the right (all in CSS: this window runs no scripts).
+  const shown = msg.kind === 'error' ? 6000 : 2800
+  const slide = 300
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     html,body{margin:0;background:transparent;overflow:hidden;font-family:'Montserrat','Segoe UI',sans-serif}
     .t{margin:8px;padding:12px 14px;background:${c.bg};color:${c.text};border-radius:10px;border-left:4px solid ${stripe};
-       box-shadow:0 6px 20px rgba(0,0,0,.45);animation:in .18s ease-out}
+       animation:in ${slide}ms cubic-bezier(.22,1,.36,1), out ${slide}ms cubic-bezier(.55,0,1,.45) ${shown - slide}ms forwards}
     b{display:block;font-size:13px} span{display:block;margin-top:3px;font-size:12px;color:${c.muted};white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    @keyframes in{from{transform:translateX(16px);opacity:0}}
+    @keyframes in{from{transform:translateX(110%);opacity:0}}
+    @keyframes out{to{transform:translateX(110%);opacity:0}}
   </style></head><body><div class="t"><b>${escape(msg.title)}</b>${msg.detail ? `<span>${escape(msg.detail)}</span>` : ''}</div></body></html>`
   const w = ensureWindow()
   const area = screen.getPrimaryDisplay().workArea
@@ -57,7 +61,7 @@ export function showOverlayToast(msg: ToastMessage): void {
   w.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)).then(() => {
     w.showInactive()
     if (hideTimer) clearTimeout(hideTimer)
-    hideTimer = setTimeout(() => w.hide(), msg.kind === 'error' ? 6000 : 2800)
+    hideTimer = setTimeout(() => w.hide(), shown + 50)
   })
 }
 

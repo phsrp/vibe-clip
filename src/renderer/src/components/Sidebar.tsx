@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconFolder, IconLayoutGrid, IconLink, IconPlus, IconSearch, IconX } from '@tabler/icons-react'
+import { IconFolder, IconLayoutGrid, IconPlus, IconSearch, IconX } from '@tabler/icons-react'
 import type { Collection, GameSummary, LibraryView } from '@shared/types'
 import { GameIcon } from './GameIcon'
 
@@ -7,7 +7,6 @@ interface Props {
   view: LibraryView
   onView: (v: LibraryView) => void
   total: number
-  sharedCount: number
   games: GameSummary[]
   collections: Collection[]
   search: string
@@ -59,13 +58,6 @@ export function Sidebar(p: Props) {
 
       <div className="sidebar-scroll">
         <SideItem active={is({ type: 'all' })} icon={<IconLayoutGrid size={16} />} label="All" count={p.total} onClick={() => p.onView({ type: 'all' })} />
-        <SideItem
-          active={is({ type: 'shared' })}
-          icon={<IconLink size={16} />}
-          label="Shared"
-          count={p.sharedCount}
-          onClick={() => p.onView({ type: 'shared' })}
-        />
 
         <div className="side-section">Games</div>
         {p.games.length === 0 && <div className="side-empty">Games you play show up here</div>}

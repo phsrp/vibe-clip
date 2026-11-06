@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { IconCamera, IconLink, IconMovie, IconPhoto, IconPlayerPlayFilled, IconVideo } from '@tabler/icons-react'
+import { IconCamera, IconMovie, IconPhoto, IconPlayerPlayFilled, IconVideo } from '@tabler/icons-react'
 import type { Clip } from '@shared/types'
 import { formatDuration, formatSize } from '../lib/format'
 import { GameIcon } from './GameIcon'
@@ -41,11 +41,6 @@ export const ClipCard = memo(function ClipCard({ clip, gameIcon, selected, renam
         <span className="play-overlay">
           <span>{clip.kind === 'screenshot' ? <IconPhoto size={18} /> : <IconPlayerPlayFilled size={18} />}</span>
         </span>
-        {clip.shared && (
-          <span className="badge badge-left">
-            <IconLink size={12} /> Shared
-          </span>
-        )}
         <span className="badge">
           {clip.kind === 'screenshot' ? <IconCamera size={13} /> : formatDuration(clip.duration)}
         </span>

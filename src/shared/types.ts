@@ -63,7 +63,6 @@ export interface LibrarySnapshot {
 /** Which clips the sidebar is showing. */
 export type LibraryView =
   | { type: 'all' }
-  | { type: 'shared' }
   | { type: 'game'; id: string }
   | { type: 'collection'; id: number }
 

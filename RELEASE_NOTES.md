@@ -1,3 +1,3 @@
-- Fixed: recordings, clips and streams had no sound, and the mixer's level meters never moved
-- New: drag sources around the preview to move them, and drag a corner to resize (Shift keeps it free-form, Alt turns off snapping, arrow keys nudge)
-- New: Valorant and Roblox are recognised, and installed games show their real icons straight away
+- The "Clip saved" pop-up over your game no longer has a dark box around it, and it slides back out when it goes away
+- In-app notifications slide out too instead of just disappearing
+- Removed the "Shared" tab from the clip library

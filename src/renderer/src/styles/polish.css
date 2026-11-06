@@ -344,6 +344,16 @@
     opacity: 0;
   }
 }
+.toast.leaving {
+  animation: toast-out 0.26s cubic-bezier(0.55, 0, 1, 0.45) forwards;
+  pointer-events: none;
+}
+@keyframes toast-out {
+  to {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+}
 
 /* Respect Windows' "Animation effects" off setting. */
 @media (prefers-reduced-motion: reduce) {

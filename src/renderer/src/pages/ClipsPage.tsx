@@ -46,7 +46,6 @@ export function ClipsPage({ library, capture, engineError, onEdit }: Props) {
   const inView = useMemo(() => {
     const q = search.trim().toLowerCase()
     return library.clips.filter((c) => {
-      if (view.type === 'shared' && !c.shared) return false
       if (view.type === 'game' && c.game !== view.id) return false
       if (view.type === 'collection' && !c.collections.includes(view.id)) return false
       if (q && !`${c.title} ${c.gameName}`.toLowerCase().includes(q)) return false
@@ -131,7 +130,6 @@ export function ClipsPage({ library, capture, engineError, onEdit }: Props) {
         view={view}
         onView={setView}
         total={library.clips.length}
-        sharedCount={library.clips.filter((c) => c.shared).length}
         games={library.games}
         collections={library.collections}
         search={search}
