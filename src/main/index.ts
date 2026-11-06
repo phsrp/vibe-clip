@@ -9,7 +9,9 @@ import * as library from './library/library'
 import { registerMediaScheme, handleMediaProtocol } from './library/protocol'
 import { closeDb } from './library/db'
 import { registerIpc } from './ipc'
-import { send, setMainWindow, toast } from './notify'
+import { send, setMainWindow, setOverlayToast, toast } from './notify'
+import { pauseHotkeys, registerHotkeys, unregisterHotkeys, type HotkeyActions } from './hotkeys'
+import { destroyOverlay, showOverlayToast } from './overlay'
 import { CaptureService } from './capture/service'
 import type { EngineStatus } from '@shared/types'
 
@@ -82,8 +84,19 @@ app.whenReady().then(async () => {
 
   handleMediaProtocol((file) => library.isLibraryPath(file, getSettings().outputFolder))
   library.onLibraryChange((snap) => send('library:changed', snap))
-  registerIpc({ engine: () => engine, capture, pauseHotkeys: () => {} })
+  registerIpc({ engine: () => engine, capture, pauseHotkeys })
+  setOverlayToast(showOverlayToast)
   createWindow()
+
+  const hotkeyActions: HotkeyActions = {
+    saveReplay: () => void capture.saveReplay().catch((e) => toast('error', "Couldn't save clip", String(e?.message ?? e))),
+    toggleRecording: () => void capture.toggleRecording().catch((e) => toast('error', "Couldn't toggle recording", String(e?.message ?? e))),
+    screenshot: () => void capture.screenshot().catch((e) => toast('error', "Couldn't take screenshot", String(e?.message ?? e)))
+  }
+  registerHotkeys(getSettings().hotkeys, hotkeyActions)
+  onSettingsChange((next, prev) => {
+    if (JSON.stringify(next.hotkeys) !== JSON.stringify(prev.hotkeys)) registerHotkeys(next.hotkeys, hotkeyActions)
+  })
 
   const settings = getSettings()
   await library.scan(settings.outputFolder).catch((e) => log.error('Library scan failed', e))
@@ -117,6 +130,8 @@ app.on('before-quit', (e) => {
 
 app.on('window-all-closed', () => app.quit())
 app.on('will-quit', () => {
+  unregisterHotkeys()
+  destroyOverlay()
   stopEngine()
   closeDb()
 })
