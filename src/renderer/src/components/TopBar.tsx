@@ -44,10 +44,10 @@ export function TopBar(p: Props) {
         All
       </button>
       <button className={'tab' + (p.filter === 'clips' ? ' active' : '')} onClick={() => p.onFilter('clips')}>
-        <IconMovie size={15} /> {p.clipCount} clips
+        <IconMovie size={15} /> {p.clipCount} clip{p.clipCount === 1 ? '' : 's'}
       </button>
       <button className={'tab' + (p.filter === 'screenshots' ? ' active' : '')} onClick={() => p.onFilter('screenshots')}>
-        <IconPhoto size={15} /> {p.shotCount} screenshots
+        <IconPhoto size={15} /> {p.shotCount} screenshot{p.shotCount === 1 ? '' : 's'}
       </button>
       <button
         className="tab"

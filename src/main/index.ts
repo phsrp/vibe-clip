@@ -1,17 +1,28 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { createLogger, logPath } from './logger'
 import { startEngine, stopEngine, osn } from './engine/obs'
 import { availableEncoders } from './engine/encoders'
-import { getSettings, updateSettings } from './settings'
-import { BUILT_IN_GAMES } from './games/games'
-import { mockLibrary } from './library/mock'
+import { getSettings, onSettingsChange } from './settings'
+import * as library from './library/library'
+import { registerMediaScheme, handleMediaProtocol } from './library/protocol'
+import { closeDb } from './library/db'
+import { registerIpc, type CaptureApi } from './ipc'
+import { send, setMainWindow } from './notify'
 import type { CaptureStatus, EngineStatus } from '@shared/types'
 
 const log = createLogger('app')
 let win: BrowserWindow | null = null
-const status: EngineStatus = { running: false, error: null, encoders: [], inputTypes: [] }
+const engine: EngineStatus = { running: false, error: null, encoders: [], inputTypes: [] }
+
+// Developer helper: VIBE_DATA_DIR=<folder> keeps settings, database and logs separate (for testing).
+if (process.env['VIBE_DATA_DIR']) app.setPath('userData', process.env['VIBE_DATA_DIR'])
+
+registerMediaScheme()
+
+process.on('uncaughtException', (e) => log.error('Uncaught exception', e))
+process.on('unhandledRejection', (e) => log.error('Unhandled promise rejection', e))
 
 function createWindow(): void {
   win = new BrowserWindow({
@@ -28,7 +39,12 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  setMainWindow(win)
   win.once('ready-to-show', () => win?.show())
+  win.on('closed', () => {
+    win = null
+    setMainWindow(null)
+  })
   if (process.env['ELECTRON_RENDERER_URL']) win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   else win.loadFile(path.join(__dirname, '../renderer/index.html'))
 
@@ -37,6 +53,8 @@ function createWindow(): void {
   if (capture) {
     win.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
+        if (process.env['VIBE_CAPTURE_JS']) await win!.webContents.executeJavaScript(process.env['VIBE_CAPTURE_JS'])
+        await new Promise((r) => setTimeout(r, 800))
         const img = await win!.webContents.capturePage()
         fs.writeFileSync(capture, img.toPNG())
         app.quit()
@@ -45,55 +63,44 @@ function createWindow(): void {
   }
 }
 
-function registerIpc(): void {
-  const idle: CaptureStatus = { replayActive: false, replaySeconds: 0, recording: false, recordingSince: null, game: null, gameName: null }
-  ipcMain.handle('engine:status', () => status)
-  ipcMain.on('window:titlebar', (_e, bg: string, fg: string) => {
-    try {
-      win?.setTitleBarOverlay({ color: bg, symbolColor: fg, height: 34 })
-    } catch {
-      /* not supported on this platform */
-    }
-  })
-  ipcMain.handle('library:get', () => mockLibrary())
-  ipcMain.handle('capture:status', () => idle)
-  ipcMain.handle('capture:options', () => ({ monitors: [], desktopAudioDevices: [], micDevices: [], encoders: status.encoders }))
-  ipcMain.handle('settings:get', () => getSettings())
-  ipcMain.handle('settings:set', (_e, patch) => updateSettings(patch))
-  ipcMain.handle('settings:openLogs', () => shell.showItemInFolder(logPath()))
-  ipcMain.handle('games:builtIn', () => BUILT_IN_GAMES)
-  for (const ch of [
-    'library:rename',
-    'library:remove',
-    'library:reveal',
-    'library:createCollection',
-    'library:deleteCollection',
-    'library:addToCollection',
-    'library:removeFromCollection',
-    'capture:toggleReplay',
-    'capture:toggleRecording',
-    'capture:saveReplay',
-    'capture:screenshot',
-    'settings:pickFolder',
-    'settings:pauseHotkeys'
-  ])
-    ipcMain.handle(ch, () => null)
+// Placeholder until the recording engine is wired up (Step 3).
+const idle: CaptureStatus = { replayActive: false, replaySeconds: 0, recording: false, recordingSince: null, game: null, gameName: null }
+const captureApi: CaptureApi = {
+  status: () => idle,
+  options: () => ({ monitors: [], desktopAudioDevices: [], micDevices: [], encoders: engine.encoders }),
+  toggleReplay: async () => {},
+  toggleRecording: async () => {},
+  saveReplay: async () => {},
+  screenshot: async () => {}
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   log.info(`App starting. Log file: ${logPath()}`)
   try {
     startEngine()
-    status.running = true
-    status.encoders = availableEncoders()
-    status.inputTypes = osn.InputFactory.types()
+    engine.running = true
+    engine.encoders = availableEncoders()
+    engine.inputTypes = osn.InputFactory.types()
   } catch (e) {
-    status.error = e instanceof Error ? e.message : String(e)
+    engine.error = e instanceof Error ? e.message : String(e)
     log.error('Engine failed to start', e)
   }
-  registerIpc()
+
+  handleMediaProtocol((file) => library.isLibraryPath(file, getSettings().outputFolder))
+  library.onLibraryChange((snap) => send('library:changed', snap))
+  registerIpc({ engine: () => engine, capture: captureApi, pauseHotkeys: () => {} })
   createWindow()
+
+  const settings = getSettings()
+  await library.scan(settings.outputFolder).catch((e) => log.error('Library scan failed', e))
+  library.repairThumbnails()
+  onSettingsChange((next, prev) => {
+    if (next.outputFolder !== prev.outputFolder) library.scan(next.outputFolder).catch((e) => log.error('Library scan failed', e))
+  })
 })
 
 app.on('window-all-closed', () => app.quit())
-app.on('will-quit', () => stopEngine())
+app.on('will-quit', () => {
+  stopEngine()
+  closeDb()
+})
