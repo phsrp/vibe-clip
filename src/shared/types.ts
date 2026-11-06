@@ -338,6 +338,39 @@ export interface StreamStatus {
   totalFrames: number
 }
 
+// ----- Clip editor -----
+
+export interface EditStrip {
+  duration: number
+  width: number
+  height: number
+  /** One image with `stripCount` frames side by side. */
+  strip: string
+  stripCount: number
+  /** Audio waveform image, or null if the clip has no audio. */
+  wave: string | null
+  audioStreams: number
+}
+
+export interface EditSegment {
+  /** Seconds in the original clip. */
+  start: number
+  end: number
+}
+
+export interface CropRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface EditExportRequest {
+  clipId: number
+  segments: EditSegment[]
+  crop: CropRect | null
+}
+
 export interface ObsCollectionPreview {
   name: string
   file: string

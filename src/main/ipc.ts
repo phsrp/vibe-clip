@@ -14,7 +14,8 @@ import { hidePreview, showPreview, type PreviewRect } from './preview'
 import { HOTKEY_LABELS } from './hotkeys'
 import { osn } from './engine/obs'
 import type { CaptureService } from './capture/service'
-import type { AppSettings, EngineStatus, ProfilesState, PropertyTarget, SourceKind } from '@shared/types'
+import { cancelExport, exportEdit, makeStrip } from './editor/editor'
+import type { AppSettings, EditExportRequest, EngineStatus, ProfilesState, PropertyTarget, SourceKind } from '@shared/types'
 
 export interface IpcDeps {
   engine: () => EngineStatus
@@ -137,6 +138,20 @@ export function registerIpc(deps: IpcDeps): void {
     if (w && sc) showPreview(w, sc.video, rect, bg)
   })
   ipcMain.on('preview:hide', () => hidePreview())
+
+  // ----- Clip editor -----
+  ipcMain.handle('editor:strip', safe('prepare the timeline', (clipId: number) => makeStrip(clipId)))
+  ipcMain.handle('editor:export', async (e, req: EditExportRequest) => {
+    try {
+      const id = await exportEdit(req, (p) => e.sender.send('editor:progress', p))
+      if (id) toast('success', 'Edit saved', 'Your edited clip is in the library next to the original.')
+      return id
+    } catch (err) {
+      toast('error', "The edit couldn't be exported", err instanceof Error ? err.message : String(err))
+      return null
+    }
+  })
+  ipcMain.handle('editor:cancel', () => cancelExport())
 
   // ----- Streaming -----
   ipcMain.handle('stream:setKey', safe('save the stream key', (key: string) => cap.setStreamKey(key)))

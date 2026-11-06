@@ -5,6 +5,8 @@ import type {
   AppSettings,
   CaptureOptions,
   CaptureStatus,
+  EditExportRequest,
+  EditStrip,
   EngineStatus,
   GameDefinition,
   LibrarySnapshot,
@@ -95,6 +97,13 @@ const api = {
     show: (rect: { x: number; y: number; width: number; height: number }, bg: { r: number; g: number; b: number }): void =>
       ipcRenderer.send('preview:show', rect, bg),
     hide: (): void => ipcRenderer.send('preview:hide')
+  },
+
+  editor: {
+    strip: (clipId: number): Promise<EditStrip | undefined> => ipcRenderer.invoke('editor:strip', clipId),
+    export: (req: EditExportRequest): Promise<number | null> => ipcRenderer.invoke('editor:export', req),
+    cancel: (): Promise<void> => ipcRenderer.invoke('editor:cancel'),
+    onProgress: (cb: (p: number) => void) => listen('editor:progress', cb)
   },
 
   stream: {
