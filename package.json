@@ -1,0 +1,32 @@
+{
+  "name": "vibe-clip",
+  "productName": "Vibe Clip",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game recording and clipping app built on the OBS engine",
+  "main": "out/main/index.js",
+  "license": "GPL-2.0",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@fontsource-variable/montserrat": "5.3.0",
+    "@tabler/icons-react": "3.50.0",
+    "obs-studio-node": "https://s3-us-west-2.amazonaws.com/obsstudionodes3.streamlabs.com/osn-0.27.33-release-win64.tar.gz",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "electron": "43.8.3",
+    "electron-vite": "6.0.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.6"
+  }
+}
