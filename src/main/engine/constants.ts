@@ -33,6 +33,9 @@ export const InitCode: Record<number, string> = {
   [-5]: 'A required OBS module is missing'
 }
 
+/** monitor_capture "method" setting. */
+export const DisplayMethod = { Auto: 0, DXGI: 1, WGC: 2 } as const
+
 /** Audio output channels, same layout OBS Studio uses. */
 export const Channel = { Video: 0, DesktopAudio: 1, Mic: 3 } as const
 

@@ -16,7 +16,10 @@ export const KNOWN_ENCODERS: EncoderInfo[] = [
   { id: 'obs_x264', label: 'x264 (CPU)', hardware: false }
 ]
 
+let cached: EncoderInfo[] | null = null
+
 export function availableEncoders(): EncoderInfo[] {
+  if (cached) return cached
   let ids: string[] = []
   try {
     ids = osn.VideoEncoderFactory.types()
@@ -26,7 +29,9 @@ export function availableEncoders(): EncoderInfo[] {
   log.info('Encoders registered by OBS: ' + ids.join(', '))
   const found = KNOWN_ENCODERS.filter((e) => ids.includes(e.id))
   if (!found.some((e) => e.id === 'obs_x264')) found.push(KNOWN_ENCODERS[KNOWN_ENCODERS.length - 1])
-  return found
+  // Only one entry per vendor in the menu (the newest API).
+  cached = found.filter((e) => !(e.id === 'jim_nvenc' && ids.includes('obs_nvenc_h264_tex')) && !(e.id === 'obs_qsv11' && ids.includes('obs_qsv11_v2')))
+  return cached
 }
 
 /** "auto" means: the first (best) available encoder. */

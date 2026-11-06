@@ -27,7 +27,7 @@ export function SourcesPage({ settings: s, onChange, engine }: Props) {
         <h1 className="page-title">Sources</h1>
         {engine?.error && <div className="banner error">The recording engine isn't running: {engine.error}</div>}
 
-        <Section title="Video" description="What gets recorded. Scenes with several sources come in a later version.">
+        <Section title="Video" description="What gets recorded. Profiles with several sources come in a later version.">
           <Field
             label="Capture"
             hint={

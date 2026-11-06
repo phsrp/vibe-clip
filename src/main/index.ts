@@ -8,9 +8,10 @@ import { getSettings, onSettingsChange } from './settings'
 import * as library from './library/library'
 import { registerMediaScheme, handleMediaProtocol } from './library/protocol'
 import { closeDb } from './library/db'
-import { registerIpc, type CaptureApi } from './ipc'
-import { send, setMainWindow } from './notify'
-import type { CaptureStatus, EngineStatus } from '@shared/types'
+import { registerIpc } from './ipc'
+import { send, setMainWindow, toast } from './notify'
+import { CaptureService } from './capture/service'
+import type { EngineStatus } from '@shared/types'
 
 const log = createLogger('app')
 let win: BrowserWindow | null = null
@@ -63,16 +64,9 @@ function createWindow(): void {
   }
 }
 
-// Placeholder until the recording engine is wired up (Step 3).
-const idle: CaptureStatus = { replayActive: false, replaySeconds: 0, recording: false, recordingSince: null, game: null, gameName: null }
-const captureApi: CaptureApi = {
-  status: () => idle,
-  options: () => ({ monitors: [], desktopAudioDevices: [], micDevices: [], encoders: engine.encoders }),
-  toggleReplay: async () => {},
-  toggleRecording: async () => {},
-  saveReplay: async () => {},
-  screenshot: async () => {}
-}
+const capture = new CaptureService()
+capture.onStatus = (s) => send('capture:status', s)
+let quitting = false
 
 app.whenReady().then(async () => {
   log.info(`App starting. Log file: ${logPath()}`)
@@ -88,7 +82,7 @@ app.whenReady().then(async () => {
 
   handleMediaProtocol((file) => library.isLibraryPath(file, getSettings().outputFolder))
   library.onLibraryChange((snap) => send('library:changed', snap))
-  registerIpc({ engine: () => engine, capture: captureApi, pauseHotkeys: () => {} })
+  registerIpc({ engine: () => engine, capture, pauseHotkeys: () => {} })
   createWindow()
 
   const settings = getSettings()
@@ -96,7 +90,29 @@ app.whenReady().then(async () => {
   library.repairThumbnails()
   onSettingsChange((next, prev) => {
     if (next.outputFolder !== prev.outputFolder) library.scan(next.outputFolder).catch((e) => log.error('Library scan failed', e))
+    if (engine.running) capture.applySettings(next, prev).catch((e) => toast('error', "Couldn't apply settings", String(e)))
   })
+
+  if (engine.running) {
+    try {
+      await capture.init()
+    } catch (e) {
+      engine.error = 'The capture setup failed: ' + (e instanceof Error ? e.message : String(e))
+      log.error('Capture init failed', e)
+      toast('error', "Recording couldn't be set up", engine.error)
+    }
+  }
+})
+
+// Stop recording cleanly (so the file is saved) before the app exits.
+app.on('before-quit', (e) => {
+  if (quitting) return
+  e.preventDefault()
+  quitting = true
+  capture
+    .shutdown()
+    .catch((err) => log.error('Shutdown error', err))
+    .finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => app.quit())
