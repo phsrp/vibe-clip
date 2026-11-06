@@ -33,6 +33,9 @@ interface InputEntry {
   filterOrder: string
   filters: Map<string, { filter: OSN.IFilter; sig: string }>
   volmeter: OSN.IVolmeter | null
+  /** Volume control. The engine's own `input.volume` setter is broken (1 becomes Infinity,
+   *  0.5 becomes 0, which silences the source), so volume always goes through a fader. */
+  fader: OSN.IFader | null
 }
 
 interface SceneEntry {
@@ -168,11 +171,13 @@ export class SceneManager {
       if (e) this.destroyInput(src.id)
       const input = osn.InputFactory.create(src.obsType, src.id, settings)
       if (!input) throw new Error(`OBS could not create a "${src.obsType}" source (plugin missing?)`)
-      e = { input, obsType: src.obsType, settingsSig: sig, audioSig: '', filterOrder: '', filters: new Map(), volmeter: null }
+      e = { input, obsType: src.obsType, settingsSig: sig, audioSig: '', filterOrder: '', filters: new Map(), volmeter: null, fader: null }
       this.inputs.set(src.id, e)
       if ((input.outputFlags & AUDIO_FLAG) !== 0) {
         e.volmeter = osn.VolmeterFactory.create(1 as unknown as OSN.EFaderType)
         e.volmeter.attach(input)
+        e.fader = osn.FaderFactory.create(2 as unknown as OSN.EFaderType)
+        e.fader.attach(input)
       }
       log.info(`Created source "${src.name}" (${src.obsType})`)
     } else if (e.settingsSig !== sig) {
@@ -183,7 +188,8 @@ export class SceneManager {
     const a = src.audio
     const audioSig = JSON.stringify(a)
     if (audioSig !== e.audioSig) {
-      e.input.volume = a.volume
+      // Never use e.input.volume (see InputEntry.fader).
+      if (e.fader) e.fader.mul = Math.max(0, Number.isFinite(a.volume) ? a.volume : 1)
       e.input.muted = a.muted
       e.input.audioMixers = a.mixers
       e.input.monitoringType = a.monitoring as unknown as OSN.EMonitoringType
@@ -333,6 +339,8 @@ export class SceneManager {
     try {
       e.volmeter?.detach()
       e.volmeter?.destroy()
+      e.fader?.detach()
+      e.fader?.destroy()
       for (const fe of e.filters.values()) fe.filter.release()
       e.input.release()
     } catch (err) {
