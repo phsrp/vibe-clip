@@ -10,6 +10,7 @@ const log = createLogger('settings')
 function defaults(): AppSettings {
   return {
     theme: 'default',
+    themeMode: 'dark',
     outputFolder: path.join(app.getPath('videos'), 'Vibe Clip'),
     baseResolution: 'auto',
     outputResolution: '1080',

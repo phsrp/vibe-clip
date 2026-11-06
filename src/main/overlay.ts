@@ -12,7 +12,10 @@ let hideTimer: NodeJS.Timeout | null = null
 const COLORS: Record<string, { bg: string; text: string; muted: string; accent: string; ok: string; err: string }> = {
   default: { bg: '#202025', text: '#ececf1', muted: '#9a9aa5', accent: '#8b5cf6', ok: '#22c55e', err: '#ef4444' },
   gruvbox: { bg: '#32302f', text: '#ebdbb2', muted: '#a89984', accent: '#fe8019', ok: '#b8bb26', err: '#fb4934' },
-  'rose-pine': { bg: '#26233a', text: '#e0def4', muted: '#908caa', accent: '#c4a7e7', ok: '#9ccfd8', err: '#eb6f92' }
+  'rose-pine': { bg: '#26233a', text: '#e0def4', muted: '#908caa', accent: '#c4a7e7', ok: '#9ccfd8', err: '#eb6f92' },
+  'default-light': { bg: '#ffffff', text: '#1c1c23', muted: '#5d5d6a', accent: '#7c3aed', ok: '#16a34a', err: '#dc2626' },
+  'gruvbox-light': { bg: '#fbf1c7', text: '#3c3836', muted: '#665c54', accent: '#af3a03', ok: '#79740e', err: '#9d0006' },
+  'rose-pine-light': { bg: '#fffaf3', text: '#575279', muted: '#797593', accent: '#907aa9', ok: '#286983', err: '#b4637a' }
 }
 
 function escape(s: string): string {
@@ -42,7 +45,8 @@ function ensureWindow(): BrowserWindow {
 }
 
 export function showOverlayToast(msg: ToastMessage): void {
-  const c = COLORS[getSettings().theme] ?? COLORS.default
+  const s = getSettings()
+  const c = (s.themeMode === 'light' ? COLORS[`${s.theme}-light`] : COLORS[s.theme]) ?? COLORS.default
   const stripe = msg.kind === 'success' ? c.ok : msg.kind === 'error' ? c.err : c.accent
   // How long it stays, then it slides back out to the right (all in CSS: this window runs no scripts).
   const shown = msg.kind === 'error' ? 6000 : 2800

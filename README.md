@@ -38,7 +38,7 @@ A Windows game recorder and clipper with the power of OBS, Medal-style instant c
 - **Import from OBS:** bring over your OBS settings (encoder, bitrate, tracks, hotkeys, stream key) and your scenes, which become profiles with their sources, positions, filters and audio routing.
 - **Runs in the tray** so the replay buffer keeps going with the window closed, and it can start with Windows
 - **Updates itself:** tells you when a new version is out and asks before downloading
-- **Themes:** Default Dark, Gruvbox Dark and Rosé Pine
+- **Themes:** Default, Gruvbox and Rosé Pine, each with a dark and a light mode (Rosé Pine's light mode is Rosé Pine Dawn)
 
 ## Previews
 

@@ -94,6 +94,8 @@ export interface Hotkeys {
 
 export interface AppSettings {
   theme: string
+  /** Every theme comes in a dark and a light version. */
+  themeMode: 'dark' | 'light'
   /** Where clips, recordings and screenshots are saved. */
   outputFolder: string
   // ----- Video (OBS: Settings → Video) -----

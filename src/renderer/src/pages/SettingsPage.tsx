@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconFileText, IconFolder, IconKey, IconPlus, IconRefresh, IconTrash } from '@tabler/icons-react'
+import { IconFileText, IconFolder, IconKey, IconMoon, IconPlus, IconRefresh, IconSun, IconTrash } from '@tabler/icons-react'
 import type { AppSettings, CaptureOptions, EngineStatus, GameDefinition, Hotkeys, UpdateStatus } from '@shared/types'
 import { Field, HotkeyInput, NumberInput, Section, Select, Toggle } from '../components/Controls'
 import { PropertyForm } from '../components/PropertyForm'
@@ -165,7 +165,17 @@ export function SettingsPage({ settings: s, onChange, engine, update, version }:
               </button>
             </Field>
             <Field label="Theme">
-              <Select value={s.theme} options={THEMES.map((t) => ({ value: t.id as string, label: t.name }))} onChange={(v) => onChange({ theme: v })} />
+              <span className="row">
+                <Select value={s.theme} options={THEMES.map((t) => ({ value: t.id as string, label: t.name }))} onChange={(v) => onChange({ theme: v })} />
+                <div className="seg mode-seg">
+                  <button className={s.themeMode !== 'light' ? 'on' : ''} onClick={() => onChange({ themeMode: 'dark' })}>
+                    <IconMoon size={14} /> Dark
+                  </button>
+                  <button className={s.themeMode === 'light' ? 'on' : ''} onClick={() => onChange({ themeMode: 'light' })}>
+                    <IconSun size={14} /> Light
+                  </button>
+                </div>
+              </span>
             </Field>
             <Field label="Close to tray" hint="Closing the window keeps the app (and the replay buffer) running in the system tray.">
               <Toggle checked={s.minimizeToTray} onChange={(v) => onChange({ minimizeToTray: v })} />

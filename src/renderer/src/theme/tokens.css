@@ -1,7 +1,8 @@
 /*
   Theme tokens. Every color in the app comes from these variables.
-  To make a new theme: copy one block, change the colors, give it a new data-theme name,
-  and add it to themes.ts.
+  Each theme has a dark version ([data-theme='x']) and a light version
+  ([data-theme='x'][data-mode='light']). To make a new theme: copy both blocks, change the
+  colors, give it a new data-theme name, and add it to themes.ts.
 */
 
 :root,
@@ -80,8 +81,94 @@
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
+/* ---------- Light versions ---------- */
+
+[data-theme='default'][data-mode='light'] {
+  --bg-window: #e8e8ee;
+  --bg-rail: #e8e8ee;
+  --bg-sidebar: #f3f3f7;
+  --bg-main: #fafafc;
+  --surface: #ebebf1;
+  --surface-hover: #e2e2ea;
+  --surface-active: #d7d7e1;
+  --border: #dedee6;
+  --text: #1c1c23;
+  --text-muted: #5d5d6a;
+  --text-faint: #9898a5;
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-text: #ffffff;
+  --accent-soft: rgba(124, 58, 237, 0.14);
+  --record: #dc2626;
+  --danger: #dc2626;
+  --success: #16a34a;
+  --warning: #d97706;
+  --overlay: rgba(28, 28, 40, 0.35);
+  --badge-bg: rgba(0, 0, 0, 0.62);
+  --shadow: 0 10px 30px rgba(20, 20, 40, 0.16);
+}
+
+/* Gruvbox Light (official light palette) */
+[data-theme='gruvbox'][data-mode='light'] {
+  --bg-window: #f2e5bc;
+  --bg-rail: #f2e5bc;
+  --bg-sidebar: #fbf1c7;
+  --bg-main: #f9f5d7;
+  --surface: #ebdbb2;
+  --surface-hover: #e3d1a5;
+  --surface-active: #d5c4a1;
+  --border: #e3d5ae;
+  --text: #3c3836;
+  --text-muted: #665c54;
+  --text-faint: #928374;
+  --accent: #af3a03;
+  --accent-hover: #d65d0e;
+  --accent-text: #fbf1c7;
+  --accent-soft: rgba(175, 58, 3, 0.14);
+  --record: #9d0006;
+  --danger: #9d0006;
+  --success: #79740e;
+  --warning: #b57614;
+  --overlay: rgba(60, 56, 54, 0.35);
+  --badge-bg: rgba(40, 40, 40, 0.7);
+  --shadow: 0 10px 30px rgba(60, 56, 54, 0.18);
+}
+
+/* Rosé Pine Dawn (Rosé Pine's official light palette) */
+[data-theme='rose-pine'][data-mode='light'] {
+  --bg-window: #f2e9e1;
+  --bg-rail: #f2e9e1;
+  --bg-sidebar: #fffaf3;
+  --bg-main: #faf4ed;
+  --surface: #f4ede8;
+  --surface-hover: #efe5dd;
+  --surface-active: #dfdad9;
+  --border: #ebe3dc;
+  --text: #575279;
+  --text-muted: #797593;
+  --text-faint: #9893a5;
+  --accent: #907aa9;
+  --accent-hover: #7f6898;
+  --accent-text: #faf4ed;
+  --accent-soft: rgba(144, 122, 169, 0.16);
+  --record: #b4637a;
+  --danger: #b4637a;
+  --success: #286983;
+  --warning: #ea9d34;
+  --overlay: rgba(87, 82, 121, 0.3);
+  --badge-bg: rgba(87, 82, 121, 0.78);
+  --shadow: 0 10px 30px rgba(87, 82, 121, 0.16);
+}
+
 :root {
-  --font: 'Montserrat Variable', 'Montserrat', 'Segoe UI', sans-serif;
+  color-scheme: dark;
+}
+:root[data-mode='light'] {
+  color-scheme: light;
+}
+
+:root {
+  --font:'Montserrat Variable', 'Montserrat', 'Segoe UI', sans-serif;
   --radius: 8px;
   --radius-sm: 6px;
   --titlebar-h: 34px;

@@ -45,7 +45,7 @@ export default function App() {
     window.api.update.status().then(setUpdate)
     window.api.settings.get().then((s) => {
       setSettings(s)
-      applyTheme(s.theme)
+      applyTheme(s.theme, s.themeMode)
     })
     const offs = [
       window.api.library.onChange(setLibrary),
@@ -67,7 +67,7 @@ export default function App() {
     setSettings((s) => (s ? { ...s, ...patch } : s))
     const next = await window.api.settings.set(patch)
     if (next) setSettings(next)
-    if (patch.theme) applyTheme(patch.theme)
+    if (patch.theme || patch.themeMode) applyTheme(patch.theme ?? settings?.theme ?? 'default', patch.themeMode ?? settings?.themeMode ?? 'dark')
   }
 
   const updateProfiles = async (next: ProfilesState) => {
