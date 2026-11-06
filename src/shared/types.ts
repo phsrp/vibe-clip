@@ -408,6 +408,16 @@ export interface GameDefinition {
   name: string
   /** Process names to look for, e.g. ["osu!.exe"]. Case-insensitive. */
   processes: string[]
+  /** Where the game is usually installed (used to show its icon before you've played it). */
+  installHints?: {
+    /** Full paths to try; %LOCALAPPDATA% style variables work. */
+    paths?: string[]
+    /** Folders with one subfolder per version (Roblox): the newest one containing `versionExe` wins. */
+    versionDirs?: string[]
+    versionExe?: string
+    /** Path inside a Steam library's steamapps\common folder. */
+    steam?: string
+  }
 }
 
 export interface DeviceOption {

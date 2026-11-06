@@ -12,7 +12,8 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dist": "electron-vite build && electron-builder --win --x64 --publish never",
-    "release": "electron-vite build && electron-builder --win --x64 --publish always"
+    "release": "electron-vite build && electron-builder --win --x64 --publish always",
+    "banner": "electron scripts/make-banner.js"
   },
   "dependencies": {
     "electron-updater": "6.8.11",
@@ -89,13 +90,13 @@
       {
         "provider": "github",
         "owner": "phsrp",
-        "repo": "Vibe-Clip",
+        "repo": "vibe-clip",
         "releaseType": "release"
       }
     ]
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/phsrp/Vibe-Clip.git"
+    "url": "https://github.com/phsrp/vibe-clip.git"
   }
 }

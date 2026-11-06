@@ -19,6 +19,8 @@ import { flushProfiles, getProfiles, mapSource, onProfilesChange, setProfiles } 
 import { hidePreview } from './preview'
 import { destroyOverlay, showOverlayToast } from './overlay'
 import { GameDetector, savedIcons } from './games/detector'
+import { findGameIcons } from './games/icons'
+import { allGames } from './games/games'
 import { CaptureService } from './capture/service'
 import { createTray, destroyTray, resourcePath, updateTray } from './tray'
 import type { EngineStatus } from '@shared/types'
@@ -108,7 +110,9 @@ function createWindow(): void {
   if (shot) {
     win.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
-        if (process.env['VIBE_CAPTURE_JS']) await win!.webContents.executeJavaScript(process.env['VIBE_CAPTURE_JS'])
+        if (process.env['VIBE_CAPTURE_JS']) {
+          await win!.webContents.executeJavaScript(process.env['VIBE_CAPTURE_JS']).catch((e) => log.error('Test script failed', e))
+        }
         await new Promise((r) => setTimeout(r, 800))
         // A hidden window can't be captured, so just quit in that case.
         if (win!.isVisible()) {
@@ -238,6 +242,15 @@ app.whenReady().then(async () => {
   // Game detection: tags clips with the game and switches to game capture.
   library.setGameIcons(savedIcons())
   detector.onIcon = () => library.setGameIcons(savedIcons())
+  // Show real icons for installed games right away, not only after they've been played.
+  findGameIcons(allGames())
+    .then((found) => found && library.setGameIcons(savedIcons()))
+    .catch((e) => log.warn('Looking for game icons failed', e))
+  onSettingsChange((next, prev) => {
+    if (JSON.stringify(next.customGames) !== JSON.stringify(prev.customGames)) {
+      findGameIcons(allGames()).then((found) => found && library.setGameIcons(savedIcons()))
+    }
+  })
   detector.onTick = (game) => {
     try {
       if (engine.running) capture.updateGame(game)

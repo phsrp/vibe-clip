@@ -48,7 +48,7 @@ The button shows time live and bitrate; **End stream** stops it.
 
 ## Updates (same scheme as Vibe Editing Suite and Hearth)
 
-The installed app checks GitHub Releases (`phsrp/Vibe-Clip`) a couple of seconds after it opens and **asks** before
+The installed app checks GitHub Releases (`phsrp/vibe-clip`) a couple of seconds after it opens and **asks** before
 downloading: **Download** → **Restart now** (or **Later**: it installs when you next quit). **Remind me later** hides
 it for 4 hours; an "Update x.y" badge stays in the title bar. Settings → General has **Automatic updates** and
 **Check for updates**. Before installing, a running recording is saved and the OBS engine is stopped.
