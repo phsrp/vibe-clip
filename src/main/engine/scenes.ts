@@ -454,9 +454,13 @@ export class SceneManager {
       for (const se of this.scenes.values()) se.scene.release()
       this.scenes.clear()
       this.transition?.release()
-      this.video.destroy()
     } catch (e) {
       log.warn('Error while tearing down scenes', e)
+    }
+    try {
+      this.video.destroy()
+    } catch {
+      // Expected when the live preview was used: the canvas goes away with the engine on quit.
     }
   }
 }
