@@ -7,6 +7,7 @@ import type { AppSettings, CaptureOptions, CaptureStatus, EncoderInfo } from '@s
 import { createLogger } from '../logger'
 import { CaptureGraph, outputSize, type VideoConfig } from '../engine/capture'
 import { Outputs } from '../engine/outputs'
+import { osn } from '../engine/obs'
 import { availableEncoders, resolveEncoder } from '../engine/encoders'
 import { getSettings } from '../settings'
 import { toast } from '../notify'
@@ -319,8 +320,27 @@ export class CaptureService {
     })
   }
 
-  async screenshot(): Promise<void> {
-    toast('info', 'Screenshots arrive in Step 6')
+  /** Saves the current frame (full canvas resolution, e.g. 2560x1440) as a PNG. */
+  screenshot(): Promise<void> {
+    return this.serial(async () => {
+      if (!this.graph) throw new Error('The recording engine is not running')
+      const game = this.game ?? { id: DESKTOP.id, name: DESKTOP.name, detail: null }
+      const now = new Date()
+      const root = getSettings().outputFolder
+      fs.mkdirSync(root, { recursive: true })
+      const result = await osn.NodeObs.OBS_content_takeScreenshot(this.graph.video, root, stamp(now))
+      library.markBusy(result.path, true)
+      let file: string
+      try {
+        file = moveInto(path.normalize(result.path), path.join(root, library.gameFolderName(game.name)), `Screenshot ${stamp(now)}`)
+      } finally {
+        library.markBusy(result.path, false)
+      }
+      log.info(`Screenshot saved: ${file} (${result.width}x${result.height})`)
+      const title = game.detail ? `${game.detail} · ${timeLabel(now)}` : `Screenshot ${timeLabel(now)}`
+      toast('success', 'Screenshot saved', `${game.name} · ${result.width}×${result.height}`)
+      void library.addFile(file, { kind: 'screenshot', game: game.id, gameName: game.name, title, createdAt: now.getTime() })
+    })
   }
 
   // ----- Game detection (Step 5) -----
