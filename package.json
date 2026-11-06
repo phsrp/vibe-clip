@@ -10,23 +10,78 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "electron-vite build && electron-builder --win --x64"
   },
   "dependencies": {
-    "@fontsource-variable/montserrat": "5.3.0",
-    "@tabler/icons-react": "3.50.0",
-    "obs-studio-node": "https://s3-us-west-2.amazonaws.com/obsstudionodes3.streamlabs.com/osn-0.27.33-release-win64.tar.gz",
-    "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "obs-studio-node": "https://s3-us-west-2.amazonaws.com/obsstudionodes3.streamlabs.com/osn-0.27.33-release-win64.tar.gz"
   },
   "devDependencies": {
+    "@fontsource-variable/montserrat": "5.3.0",
+    "@tabler/icons-react": "3.50.0",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.2.1",
     "electron": "43.8.3",
+    "electron-builder": "26.18.0",
     "electron-vite": "6.0.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "typescript": "5.9.3",
     "vite": "8.3.6"
+  },
+  "author": "Vibe Clip",
+  "build": {
+    "appId": "com.vibeclip.app",
+    "productName": "Vibe Clip",
+    "copyright": "GPL-2.0 (uses the OBS engine via obs-studio-node)",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/obs-studio-node/**"
+    ],
+    "npmRebuild": false,
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": [
+          "*.png",
+          "*.ico"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.ico",
+      "executableName": "Vibe Clip"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Vibe Clip",
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "runAfterFinish": true,
+      "artifactName": "Vibe Clip Setup ${version}.exe"
+    }
   }
 }
