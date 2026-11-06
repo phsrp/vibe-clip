@@ -1,3 +1,3 @@
-- The "Clip saved" pop-up over your game no longer has a dark box around it, and it slides back out when it goes away
-- In-app notifications slide out too instead of just disappearing
-- Removed the "Shared" tab from the clip library
+- New: light mode. Default, Gruvbox and Rosé Pine each come in dark and light (Rosé Pine's light mode is Rosé Pine Dawn)
+- New: a Dark / Light switch next to the theme in Settings → General
+- The "Clip saved" pop-up and the window buttons follow light mode too
