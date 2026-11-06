@@ -98,7 +98,9 @@ const api = {
   preview: {
     show: (rect: { x: number; y: number; width: number; height: number }, bg: { r: number; g: number; b: number }): void =>
       ipcRenderer.send('preview:show', rect, bg),
-    hide: (): void => ipcRenderer.send('preview:hide')
+    hide: (): void => ipcRenderer.send('preview:hide'),
+    select: (id: string | null): void => ipcRenderer.send('preview:select', id),
+    sourceSizes: (ids: string[]): Promise<Record<string, { width: number; height: number }>> => ipcRenderer.invoke('profiles:sourceSizes', ids)
   },
 
   update: {

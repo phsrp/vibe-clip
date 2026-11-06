@@ -138,6 +138,8 @@ export function registerIpc(deps: IpcDeps): void {
     if (w && sc) showPreview(w, sc.video, rect, bg)
   })
   ipcMain.on('preview:hide', () => hidePreview())
+  ipcMain.on('preview:select', (_e, id: string | null) => cap.getScenes()?.selectSource(id))
+  ipcMain.handle('profiles:sourceSizes', (_e, ids: string[]) => cap.getScenes()?.sourceSizes(ids) ?? {})
 
   // ----- Clip editor -----
   ipcMain.handle('editor:strip', safe('prepare the timeline', (clipId: number) => makeStrip(clipId)))

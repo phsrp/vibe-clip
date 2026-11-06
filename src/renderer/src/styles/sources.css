@@ -95,6 +95,14 @@
   display: grid;
   place-items: center;
 }
+.obs-preview:focus {
+  outline: none;
+}
+.preview-hit {
+  position: absolute;
+  z-index: 1;
+  touch-action: none;
+}
 .preview-paused {
   color: var(--text-faint);
   font-size: 12px;

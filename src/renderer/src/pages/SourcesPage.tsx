@@ -226,7 +226,13 @@ export function SourcesPage({ profiles: state, onProfiles, settings, engine }: P
       <div className="studio">
         {engine?.error && <div className="banner error">The recording engine isn't running: {engine.error}</div>}
         <div className="preview-wrap">
-          <ObsPreview aspect={canvas.width / canvas.height} />
+          <ObsPreview
+            canvas={canvas}
+            sources={profile.sources}
+            selectedId={selected}
+            onSelect={setSelected}
+            onTransform={(id, transform) => onProfiles(mapProfile(state, profile.id, (p) => ({ ...p, sources: p.sources.map((s) => (s.id === id ? { ...s, transform } : s)) })))}
+          />
         </div>
         <div className="studio-bottom">
           <section className="panel">

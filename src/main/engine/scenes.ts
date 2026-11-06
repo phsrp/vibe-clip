@@ -349,6 +349,29 @@ export class SceneManager {
     this.inputs.delete(id)
   }
 
+  // ----- Selection in the preview -----
+
+  /** Marks one source as selected in the active profile (OBS draws its red box and handles). */
+  selectSource(id: string | null): void {
+    for (const [pid, se] of this.scenes) {
+      for (const [sid, ie] of se.items) {
+        const want = pid === this.activeId && sid === id
+        try {
+          if (ie.item.selected !== want) ie.item.selected = want
+        } catch {
+          /* item going away */
+        }
+      }
+    }
+  }
+
+  /** Native sizes of sources (needed to work out where each one is on the canvas). */
+  sourceSizes(ids: string[]): Record<string, { width: number; height: number }> {
+    const out: Record<string, { width: number; height: number }> = {}
+    for (const id of ids) out[id] = this.sourceSize(id)
+    return out
+  }
+
   // ----- Auto game capture -----
 
   /** Points every "Auto game capture" source at the game's window (or hides them). */

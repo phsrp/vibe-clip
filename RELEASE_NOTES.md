@@ -1,4 +1,3 @@
-- First release of Vibe Clip: OBS-powered recording, an always-on replay buffer and a clip library
-- Profiles with every OBS source, filters, transitions, a live preview and an audio mixer with 6 tracks
-- Import your OBS settings and scenes, edit clips (trim, split, crop) and stream to Twitch, YouTube and more
-- Automatic updates: Vibe Clip tells you when a new version is out and asks before downloading
+- Fixed: recordings, clips and streams had no sound, and the mixer's level meters never moved
+- New: drag sources around the preview to move them, and drag a corner to resize (Shift keeps it free-form, Alt turns off snapping, arrow keys nudge)
+- New: Valorant and Roblox are recognised, and installed games show their real icons straight away

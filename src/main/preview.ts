@@ -28,7 +28,8 @@ export function showPreview(win: BrowserWindow, video: OSN.IVideo, rect: Preview
     if (!created) {
       osn.NodeObs.OBS_content_createDisplay(win.getNativeWindowHandle(), NAME, 0, false, video)
       try {
-        osn.NodeObs.OBS_content_setShouldDrawUI(NAME, false)
+        // Lets OBS draw the selected source's red box and resize handles.
+        osn.NodeObs.OBS_content_setShouldDrawUI(NAME, true)
       } catch {
         /* older engine */
       }
