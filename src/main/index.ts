@@ -201,6 +201,7 @@ app.whenReady().then(async () => {
   })
 
   onSettingsChange((next, prev) => {
+    send('settings:changed', next)
     if (JSON.stringify(next.hotkeys) !== JSON.stringify(prev.hotkeys)) {
       registerHotkeys(next.hotkeys, actions, profileHotkeys())
       updateTray(capture.status(), next.hotkeys)

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
   IconArrowsSort,
+  IconBroadcast,
+  IconBroadcastOff,
   IconCheck,
   IconFoldDown,
   IconFoldUp,
@@ -80,6 +82,7 @@ export function TopBar(p: Props) {
           {p.capture.gameName && <span className="pill-game">· {p.capture.gameName}</span>}
         </button>
       )}
+      <StreamButton capture={p.capture} disabled={!!p.engineError} />
       <RecordButton capture={p.capture} disabled={!!p.engineError} onClick={p.onToggleRecording} />
 
       {sortMenu && (
@@ -95,6 +98,48 @@ export function TopBar(p: Props) {
         />
       )}
     </header>
+  )
+}
+
+function useClock(active: boolean): number {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!active) return
+    const t = setInterval(() => setNow(Date.now()), 500)
+    return () => clearInterval(t)
+  }, [active])
+  return now
+}
+
+function StreamButton({ capture, disabled }: { capture: CaptureStatus; disabled: boolean }) {
+  const s = capture.stream
+  const now = useClock(s.live)
+  if (s.starting) {
+    return (
+      <button className="btn btn-stream starting" onClick={() => window.api.stream.toggle()}>
+        <IconBroadcast size={14} /> Connecting…
+      </button>
+    )
+  }
+  if (s.live) {
+    const secs = s.since ? (now - s.since) / 1000 : 0
+    const dropped = s.totalFrames ? (s.droppedFrames / s.totalFrames) * 100 : 0
+    return (
+      <span className="live-group">
+        <span className="status-pill live stream-pill" title={`${s.kbps} kbps · ${s.droppedFrames} dropped frames (${dropped.toFixed(1)}%)`}>
+          <span className="dot" /> Live {formatDuration(secs)}
+          <span className="pill-game">· {s.kbps} kbps</span>
+        </span>
+        <button className="btn btn-accent" onClick={() => window.api.stream.toggle()}>
+          <IconBroadcastOff size={14} /> End stream
+        </button>
+      </span>
+    )
+  }
+  return (
+    <button className="btn btn-stream" disabled={disabled} onClick={() => window.api.stream.toggle()} title="Start streaming (set up in Settings → Streaming)">
+      <IconBroadcast size={14} /> Go live
+    </button>
   )
 }
 

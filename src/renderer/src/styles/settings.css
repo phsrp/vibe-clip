@@ -1,0 +1,102 @@
+/* Phase 4: full settings page + streaming button. */
+.settings-nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 12px 32px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.nav-chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.nav-chip:hover {
+  background: var(--surface-active);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+.page-scroll [id^='set-'] {
+  scroll-margin-top: 12px;
+}
+.field.column {
+  flex-direction: column;
+  align-items: stretch;
+}
+.embedded-form {
+  padding: 4px 14px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.embedded-form .prop-row.inline .toggle {
+  margin-left: auto;
+}
+.text-input.fixed {
+  width: 260px;
+  flex: none;
+}
+.small-input {
+  width: 120px;
+  flex: none;
+}
+.track-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 120px));
+  gap: 6px;
+}
+.track-row .track-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tracks-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.track-line {
+  display: grid;
+  grid-template-columns: 22px 1fr 120px;
+  align-items: center;
+  gap: 8px;
+}
+.track-line b {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: var(--surface-active);
+  font-size: 11px;
+}
+.track-line .select {
+  min-width: 0;
+}
+.btn-stream {
+  margin-right: 6px;
+  background: var(--surface);
+}
+.btn-stream.starting {
+  color: var(--accent);
+  animation: pulse-text 1.2s ease-in-out infinite;
+}
+@keyframes pulse-text {
+  50% {
+    opacity: 0.55;
+  }
+}
+.live-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-right: 6px;
+}
+.stream-pill .dot {
+  background: var(--record) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--record) 25%, transparent) !important;
+}

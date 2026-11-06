@@ -64,7 +64,8 @@ const api = {
     /** Temporarily turn off global hotkeys while the user is typing a new one. */
     pauseHotkeys: (paused: boolean): Promise<void> => ipcRenderer.invoke('settings:pauseHotkeys', paused),
     hotkeyLabels: (): Promise<Record<string, string>> => ipcRenderer.invoke('settings:hotkeyLabels'),
-    monitoringDevices: (): Promise<{ id: string; name: string }[]> => ipcRenderer.invoke('settings:monitoringDevices')
+    monitoringDevices: (): Promise<{ id: string; name: string }[]> => ipcRenderer.invoke('settings:monitoringDevices'),
+    onChange: (cb: (s: AppSettings) => void) => listen('settings:changed', cb)
   },
 
   profiles: {

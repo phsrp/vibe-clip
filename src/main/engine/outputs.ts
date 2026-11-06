@@ -82,6 +82,8 @@ export class Outputs {
   private handleSignal = (s: Signal): void => {
     log.info(`signal ${s.type}/${s.signal} code=${s.code}${s.error ? ' error=' + s.error : ''}`)
     const isStop = s.signal === 'stop'
+    // A stream that fails while connecting is reported by startStream itself.
+    const wasConnecting = s.type === 'streaming' && this.streamStarting
     if (isStop) {
       if (s.type === 'recording') {
         this.recordingActive = false
@@ -107,7 +109,7 @@ export class Outputs {
         w.reject(new OutputError(describe(s)))
       }
     }
-    const expected = this.stopping.has(s.type)
+    const expected = this.stopping.has(s.type) || wasConnecting
     if (isStop) this.stopping.delete(s.type)
     if (isStop && !expected && s.code !== 0) this.onUnexpectedStop?.(s.type as 'recording' | 'replay-buffer' | 'streaming', describe(s))
   }

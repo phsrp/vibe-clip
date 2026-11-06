@@ -43,6 +43,7 @@ export default function App() {
     const offs = [
       window.api.library.onChange(setLibrary),
       window.api.capture.onStatus(setCapture),
+      window.api.settings.onChange(setSettings),
       window.api.profiles.onChange((p) => {
         if (pendingProfiles.current > 0) return
         setProfiles(p)
