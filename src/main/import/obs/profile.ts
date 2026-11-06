@@ -8,6 +8,7 @@ import * as path from 'path'
 import type { AppSettings, ObsProfilePreview, OutputResolution } from '@shared/types'
 import { createLogger } from '../../logger'
 import { availableEncoders, KNOWN_ENCODERS } from '../../engine/encoders'
+import { encryptSecret } from '../../secrets'
 
 const log = createLogger('obs-import')
 
@@ -162,17 +163,103 @@ export function readProfile(folder: string, current: AppSettings): ObsProfilePre
   const save = obsHotkey(hk.ReplayBuffer, 'ReplayBuffer.Save')
   const rec = obsHotkey(hk['OBSBasic.StartRecording'], 'bindings')
   const shot = obsHotkey(hk['OBSBasic.Screenshot'], 'bindings')
-  if (save || rec || shot) {
-    patch.hotkeys = { ...current.hotkeys, ...(save && { saveReplay: save }), ...(rec && { toggleRecording: rec }), ...(shot && { screenshot: shot }) }
+  const replay = obsHotkey(hk['OBSBasic.StartReplayBuffer'], 'bindings')
+  const stream = obsHotkey(hk['OBSBasic.StartStreaming'], 'bindings')
+  if (save || rec || shot || replay || stream) {
+    patch.hotkeys = {
+      ...current.hotkeys,
+      ...(save && { saveReplay: save }),
+      ...(rec && { toggleRecording: rec }),
+      ...(shot && { screenshot: shot }),
+      ...(replay && { toggleReplay: replay }),
+      ...(stream && { toggleStream: stream })
+    }
     imported.push(
-      'Hotkeys: ' + [save && `save clip ${save}`, rec && `record ${rec}`, shot && `screenshot ${shot}`].filter(Boolean).join(', ')
+      'Hotkeys: ' +
+        [save && `save clip ${save}`, rec && `record ${rec}`, shot && `screenshot ${shot}`, replay && `replay buffer ${replay}`, stream && `stream ${stream}`]
+          .filter(Boolean)
+          .join(', ')
     )
   }
 
-  // Things this version doesn't use yet
-  if (advanced && Number(out.RecTracks) > 1) skipped.push('Recording audio tracks: Vibe Clip always saves 3 tracks (mixed, desktop, mic) for now')
-  if (out.RecFormat2) skipped.push(`Recording format "${out.RecFormat2}": Vibe Clip saves MP4`)
-  skipped.push('Scenes and sources (your scene collection) will be importable as profiles in a later version')
+  // Canvas size and exact frame rate
+  if (Number(v.BaseCX) && Number(v.BaseCY)) {
+    patch.baseResolution = `${v.BaseCX}x${v.BaseCY}`
+    imported.push(`Canvas: ${v.BaseCX}×${v.BaseCY}`)
+  }
+  if (outH && Number(v.OutputCX)) patch.outputResolution = outH === baseH ? 'native' : `${v.OutputCX}x${v.OutputCY}`
+  if (fpsType === 2 && Number(v.FPSNum)) {
+    patch.fps = Number(v.FPSNum)
+    patch.fpsDen = Number(v.FPSDen) || 1
+  } else if (fpsType === 0 && v.FPSCommon && v.FPSCommon.includes('.')) {
+    const f = Number(v.FPSCommon)
+    patch.fps = Math.round(f) * 1000
+    patch.fpsDen = 1001
+  } else {
+    patch.fpsDen = 1
+  }
+  const scale: Record<string, AppSettings['downscaleFilter']> = { bilinear: 'bilinear', bicubic: 'bicubic', lanczos: 'lanczos', area: 'area' }
+  if (v.ScaleType && scale[v.ScaleType]) patch.downscaleFilter = scale[v.ScaleType]
+  if (['NV12', 'I420', 'I444', 'BGRA'].includes(v.ColorFormat)) patch.colorFormat = v.ColorFormat as AppSettings['colorFormat']
+  const space: Record<string, AppSettings['colorSpace']> = { '601': '601', '709': '709', sRGB: 'sRGB', '2100PQ': '2100PQ', '2100HLG': '2100HLG' }
+  if (space[v.ColorSpace]) patch.colorSpace = space[v.ColorSpace]
+  if (v.ColorRange) patch.colorRange = v.ColorRange === 'Full' ? 'full' : 'partial'
+  if (v.ColorFormat) imported.push(`Colors: ${v.ColorFormat}, ${v.ColorSpace ?? '709'}, ${v.ColorRange ?? 'Partial'} range`)
+
+  // Audio
+  const a = ini.Audio ?? {}
+  if (a.SampleRate === '44100' || a.SampleRate === '48000') patch.sampleRate = Number(a.SampleRate) as 44100 | 48000
+  const ch: Record<string, AppSettings['channels']> = { Mono: 'mono', Stereo: 'stereo', '2.1': '2.1', '4.0': '4.0', '4.1': '4.1', '5.1': '5.1', '7.1': '7.1' }
+  if (a.ChannelSetup && ch[a.ChannelSetup]) patch.channels = ch[a.ChannelSetup]
+  if (a.SampleRate) imported.push(`Audio: ${a.SampleRate} Hz, ${a.ChannelSetup ?? 'Stereo'}`)
+  if (advanced) {
+    patch.tracks = current.tracks.map((t, i) => ({
+      name: ini.AdvOut?.[`Track${i + 1}Name`] || t.name,
+      bitrate: Number(ini.AdvOut?.[`Track${i + 1}Bitrate`]) || t.bitrate
+    }))
+    const recTracks = Number(out.RecTracks)
+    if (recTracks > 0) {
+      patch.recordTracks = recTracks & 63
+      patch.replayTracks = recTracks & 63
+      imported.push(`Recorded audio tracks: ${[1, 2, 3, 4, 5, 6].filter((t) => recTracks & (1 << (t - 1))).join(', ')}`)
+    }
+  }
+
+  // Recording file options
+  const fmt = (out.RecFormat2 ?? out.RecFormat ?? '').toLowerCase()
+  if (fmt) {
+    patch.recordingFormat = fmt.includes('mkv') ? 'mkv' : fmt.includes('mov') ? 'mov' : 'mp4'
+    imported.push(`Recording format: ${patch.recordingFormat.toUpperCase()}${fmt === patch.recordingFormat ? '' : ` (from ${fmt})`}`)
+  }
+  if (ini.Output?.FilenameFormatting) patch.filenameFormat = ini.Output.FilenameFormatting
+  if (advanced && out.RecSplitFile !== undefined) {
+    patch.splitRecording = {
+      enabled: out.RecSplitFile === 'true',
+      type: out.RecSplitFileType === 'Size' ? 'size' : 'time',
+      minutes: Number(out.RecSplitFileTime) || 15,
+      megabytes: Number(out.RecSplitFileSize) || 2048
+    }
+    if (patch.splitRecording.enabled) imported.push(`Split recordings every ${patch.splitRecording.type === 'time' ? `${patch.splitRecording.minutes} min` : `${patch.splitRecording.megabytes} MB`}`)
+  }
+
+  // Streaming service (service.json holds the platform, server and stream key)
+  const service = readJson(path.join(folder, 'service.json')) as { type?: string; settings?: Record<string, unknown> } | null
+  if (service?.type) {
+    const ss = service.settings ?? {}
+    const key = String(ss.key ?? ss.bearer_token ?? '')
+    patch.stream = {
+      ...current.stream,
+      serviceType: service.type,
+      service: String(ss.service ?? current.stream.service),
+      server: String(ss.server ?? 'auto'),
+      keyEncrypted: key ? encryptSecret(key) : current.stream.keyEncrypted,
+      bitrate: Number((readJson(path.join(folder, 'streamEncoder.json')) ?? {}).bitrate) || Number(ini.SimpleOutput?.VBitrate) || current.stream.bitrate,
+      track: advanced ? Number(ini.AdvOut?.TrackIndex) || 1 : 1
+    }
+    imported.push(`Streaming: ${service.type === 'rtmp_common' ? ss.service : 'custom server'}${key ? ' (stream key included, stored encrypted)' : ''}`)
+  }
+
+  skipped.push('Scenes and sources: use "Import scene collection" below to bring them in as profiles')
 
   log.info(`Read OBS profile "${name}": ${imported.length} settings`)
   return { name, folder, patch, imported, skipped }

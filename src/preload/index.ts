@@ -9,6 +9,7 @@ import type {
   GameDefinition,
   LibrarySnapshot,
   MixerLevels,
+  ObsCollectionPreview,
   ObsProfilePreview,
   ProfileSource,
   ProfilesState,
@@ -103,7 +104,10 @@ const api = {
 
   obs: {
     /** Finds OBS Studio profiles on this PC and previews what would be imported. */
-    listProfiles: (): Promise<ObsProfilePreview[] | undefined> => ipcRenderer.invoke('obs:listProfiles')
+    listProfiles: (): Promise<ObsProfilePreview[] | undefined> => ipcRenderer.invoke('obs:listProfiles'),
+    listCollections: (): Promise<ObsCollectionPreview[] | undefined> => ipcRenderer.invoke('obs:listCollections'),
+    importCollection: (file: string, replaceAudio: boolean): Promise<ProfilesState | undefined> =>
+      ipcRenderer.invoke('obs:importCollection', file, replaceAudio)
   },
 
   games: {

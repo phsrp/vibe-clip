@@ -6,6 +6,7 @@ import { BUILT_IN_GAMES } from './games/games'
 import * as library from './library/library'
 import { getMainWindow, toast } from './notify'
 import { listProfiles } from './import/obs/profile'
+import { importCollection, listCollections } from './import/obs/collection'
 import { getProfiles, setProfiles } from './profiles/store'
 import { SOURCE_TYPES, createSource } from './profiles/sourceTypes'
 import { filterChoices, TRANSITION_NAMES } from './profiles/filterNames'
@@ -161,4 +162,22 @@ export function registerIpc(deps: IpcDeps): void {
   })
   ipcMain.handle('games:builtIn', () => BUILT_IN_GAMES)
   ipcMain.handle('obs:listProfiles', safe('read your OBS profiles', () => listProfiles(getSettings())))
+  const canvasAndTypes = () => {
+    const v = cap.getScenes()?.getVideoConfig()
+    return { canvas: { width: v?.baseWidth ?? 1920, height: v?.baseHeight ?? 1080 }, types: deps.engine().inputTypes }
+  }
+  ipcMain.handle(
+    'obs:listCollections',
+    safe('read your OBS scene collections', () => {
+      const { canvas, types } = canvasAndTypes()
+      return listCollections(canvas, types)
+    })
+  )
+  ipcMain.handle(
+    'obs:importCollection',
+    safe('import the scene collection', (file: string, replaceAudio: boolean) => {
+      const { canvas, types } = canvasAndTypes()
+      return setProfiles(importCollection(file, getProfiles(), canvas, types, replaceAudio))
+    })
+  )
 }
