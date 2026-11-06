@@ -27,7 +27,7 @@ export interface ActiveGame {
   detail: string | null
 }
 
-const RESTART_KEYS: (keyof AppSettings)[] = ['outputResolution', 'fps', 'encoder', 'bitrate', 'replaySeconds', 'monitorId', 'outputFolder']
+const RESTART_KEYS: (keyof AppSettings)[] = ['outputResolution', 'fps', 'encoder', 'bitrate', 'replaySeconds', 'monitorId', 'outputFolder', 'encoderOverrides']
 
 function stamp(d = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0')
@@ -127,6 +127,7 @@ export class CaptureService {
       encoderId: this.encoderId,
       bitrate: s.bitrate,
       replaySeconds: s.replaySeconds,
+      encoderOverrides: s.encoderOverrides?.id === this.encoderId ? s.encoderOverrides.settings : null,
       folder: s.outputFolder
     })
   }

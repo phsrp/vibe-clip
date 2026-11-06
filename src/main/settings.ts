@@ -25,7 +25,8 @@ function defaults(): AppSettings {
     micDevice: 'default',
     hotkeys: { saveReplay: 'Alt+F10', toggleRecording: 'Alt+F9', screenshot: 'Alt+F12' },
     minimizeToTray: true,
-    customGames: []
+    customGames: [],
+    encoderOverrides: null
   }
 }
 

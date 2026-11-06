@@ -117,6 +117,19 @@ export interface AppSettings {
   minimizeToTray: boolean
   /** Extra games added by the user. */
   customGames: GameDefinition[]
+  /** Exact encoder settings imported from OBS, used when that encoder is selected. */
+  encoderOverrides: { id: string; settings: Record<string, unknown> } | null
+}
+
+export interface ObsProfilePreview {
+  name: string
+  folder: string
+  /** The settings that would change. */
+  patch: Partial<AppSettings>
+  /** Human-readable list of what gets imported. */
+  imported: string[]
+  /** What can't be imported (yet), and why. */
+  skipped: string[]
 }
 
 export interface GameDefinition {

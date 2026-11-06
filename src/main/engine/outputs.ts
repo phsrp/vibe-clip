@@ -13,6 +13,8 @@ export interface OutputConfig {
   encoderId: string
   bitrate: number
   replaySeconds: number
+  /** Extra encoder settings in OBS's format (e.g. imported from an OBS profile). */
+  encoderOverrides?: Record<string, unknown> | null
   /** Folder files are first written to. */
   folder: string
 }
@@ -107,7 +109,8 @@ export class Outputs {
     this.destroyOutputs()
     this.setupTracks()
     this.config = cfg
-    const settings = encoderSettings(cfg.encoderId, cfg.bitrate)
+    // Our defaults, then any exact settings imported from OBS, then the bitrate from Settings.
+    const settings = { ...encoderSettings(cfg.encoderId, cfg.bitrate), ...(cfg.encoderOverrides ?? {}), bitrate: cfg.bitrate }
     this.encoder = osn.VideoEncoderFactory.create(cfg.encoderId, 'Vibe Clip Encoder', settings)
     if (!this.encoder) throw new Error(`Could not create the ${cfg.encoderId} encoder`)
 

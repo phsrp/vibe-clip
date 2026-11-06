@@ -8,6 +8,7 @@ import type {
   EngineStatus,
   GameDefinition,
   LibrarySnapshot,
+  ObsProfilePreview,
   ToastMessage
 } from '@shared/types'
 
@@ -52,6 +53,11 @@ const api = {
     openLogs: (): Promise<void> => ipcRenderer.invoke('settings:openLogs'),
     /** Temporarily turn off global hotkeys while the user is typing a new one. */
     pauseHotkeys: (paused: boolean): Promise<void> => ipcRenderer.invoke('settings:pauseHotkeys', paused)
+  },
+
+  obs: {
+    /** Finds OBS Studio profiles on this PC and previews what would be imported. */
+    listProfiles: (): Promise<ObsProfilePreview[] | undefined> => ipcRenderer.invoke('obs:listProfiles')
   },
 
   games: {

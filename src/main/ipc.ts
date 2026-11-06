@@ -5,6 +5,7 @@ import { getSettings, updateSettings } from './settings'
 import { BUILT_IN_GAMES } from './games/games'
 import * as library from './library/library'
 import { getMainWindow, toast } from './notify'
+import { listProfiles } from './import/obs/profile'
 import type { AppSettings, CaptureOptions, CaptureStatus, EngineStatus } from '@shared/types'
 
 export interface CaptureApi {
@@ -83,4 +84,5 @@ export function registerIpc(deps: IpcDeps): void {
   ipcMain.handle('settings:openLogs', () => shell.showItemInFolder(logPath()))
   ipcMain.handle('settings:pauseHotkeys', (_e, paused: boolean) => deps.pauseHotkeys(paused))
   ipcMain.handle('games:builtIn', () => BUILT_IN_GAMES)
+  ipcMain.handle('obs:listProfiles', safe('read your OBS profiles', () => listProfiles(getSettings())))
 }

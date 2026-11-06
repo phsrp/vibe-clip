@@ -974,6 +974,24 @@ kbd {
 .add-game {
   gap: 8px;
 }
+.import-heading {
+  margin-top: 6px;
+  color: var(--text);
+  font-weight: 600;
+}
+.import-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.45;
+}
+.import-line svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.ok {
+  color: var(--success);
+}
 .import-list {
   display: flex;
   flex-direction: column;
