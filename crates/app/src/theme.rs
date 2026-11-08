@@ -151,17 +151,186 @@ pub const LIGHT: Pal = Pal {
     scrim: rgba(0x14161E, 0.22),
 };
 
+/// Gruvbox's dark look (its hard-contrast background), in the same roles as [`DARK`].
+pub const GRUVBOX_DARK: Pal = Pal {
+    dark: true,
+    ground: rgb(0x1D2021),
+    base: rgb(0x282828),
+    raise: rgb(0x32302F),
+    raise2: rgb(0x3C3836),
+    control: rgb(0x3C3836),
+    control_h: rgb(0x504945),
+    sel: rgba(0xFBF1C7, 0.075),
+    seg_on: rgb(0x504945),
+    line: rgba(0xEBDBB2, 0.07),
+    line2: rgba(0xEBDBB2, 0.12),
+    text: rgb(0xEBDBB2),
+    text2: rgb(0xA89984),
+    text3: rgb(0x7C6F64),
+    primary: rgb(0xFBF1C7),
+    primary_fg: rgb(0x1D2021),
+    live: rgb(0xB8BB26),
+    rec: rgb(0xFB4934),
+    stream: rgb(0xD3869B),
+    warn: rgb(0xFABD2F),
+    danger: rgb(0xFB4934),
+    well: rgba(0x000000, 0.22),
+    stage: rgb(0x141617),
+    pop: rgb(0x32302F),
+    dim: rgba(0x1D2021, 0.62),
+    meter_bg: rgba(0xEBDBB2, 0.06),
+    meter_g: rgb(0xB8BB26),
+    meter_y: rgb(0xFABD2F),
+    meter_r: rgb(0xFB4934),
+    wave_hi: rgb(0xBDAE93),
+    sb_sel: rgba(0x000000, 0.12),
+    sb_hover: rgba(0xEBDBB2, 0.06),
+    scrim: rgba(0x1D2021, 0.5),
+};
+
+/// Gruvbox's light look, in the same roles as [`LIGHT`].
+pub const GRUVBOX_LIGHT: Pal = Pal {
+    dark: false,
+    ground: rgb(0xEBDBB2),
+    base: rgb(0xFBF1C7),
+    raise: rgb(0xF9F5D7),
+    raise2: rgb(0xF2E5BC),
+    control: rgb(0xEBDBB2),
+    control_h: rgb(0xD5C4A1),
+    sel: rgb(0xF9F5D7),
+    seg_on: rgb(0xF9F5D7),
+    line: rgba(0x3C3836, 0.1),
+    line2: rgba(0x3C3836, 0.16),
+    text: rgb(0x3C3836),
+    text2: rgb(0x665C54),
+    text3: rgb(0x928374),
+    primary: rgb(0x3C3836),
+    primary_fg: rgb(0xFBF1C7),
+    live: rgb(0x79740E),
+    rec: rgb(0x9D0006),
+    stream: rgb(0x8F3F71),
+    warn: rgb(0xB57614),
+    danger: rgb(0x9D0006),
+    well: rgb(0xF2E5BC),
+    stage: rgb(0x141617),
+    pop: rgb(0xF9F5D7),
+    dim: rgba(0xFBF1C7, 0.7),
+    meter_bg: rgba(0x3C3836, 0.08),
+    meter_g: rgb(0x79740E),
+    meter_y: rgb(0xB57614),
+    meter_r: rgb(0x9D0006),
+    wave_hi: rgb(0x665C54),
+    sb_sel: rgba(0x3C3836, 0.05),
+    sb_hover: rgba(0xF9F5D7, 0.4),
+    scrim: rgba(0x282828, 0.22),
+};
+
+/// Rosé Pine (its main, dark variant), in the same roles as [`DARK`].
+pub const ROSE_PINE_DARK: Pal = Pal {
+    dark: true,
+    ground: rgb(0x13111C),
+    base: rgb(0x191724),
+    raise: rgb(0x1F1D2E),
+    raise2: rgb(0x26233A),
+    control: rgb(0x26233A),
+    control_h: rgb(0x403D52),
+    sel: rgba(0xE0DEF4, 0.07),
+    seg_on: rgb(0x403D52),
+    line: rgba(0xE0DEF4, 0.07),
+    line2: rgba(0xE0DEF4, 0.12),
+    text: rgb(0xE0DEF4),
+    text2: rgb(0x908CAA),
+    text3: rgb(0x6E6A86),
+    primary: rgb(0xE0DEF4),
+    primary_fg: rgb(0x191724),
+    live: rgb(0x9CCFD8),
+    rec: rgb(0xEB6F92),
+    stream: rgb(0xC4A7E7),
+    warn: rgb(0xF6C177),
+    danger: rgb(0xEB6F92),
+    well: rgba(0x000000, 0.22),
+    stage: rgb(0x0E0D15),
+    pop: rgb(0x1F1D2E),
+    dim: rgba(0x191724, 0.62),
+    meter_bg: rgba(0xE0DEF4, 0.06),
+    meter_g: rgb(0x9CCFD8),
+    meter_y: rgb(0xF6C177),
+    meter_r: rgb(0xEB6F92),
+    wave_hi: rgb(0xC4A7E7),
+    sb_sel: rgba(0x000000, 0.12),
+    sb_hover: rgba(0xE0DEF4, 0.06),
+    scrim: rgba(0x0E0D15, 0.5),
+};
+
+/// Rosé Pine Dawn (its light variant), in the same roles as [`LIGHT`].
+pub const ROSE_PINE_LIGHT: Pal = Pal {
+    dark: false,
+    ground: rgb(0xF2E9E1),
+    base: rgb(0xFAF4ED),
+    raise: rgb(0xFFFAF3),
+    raise2: rgb(0xF4EDE8),
+    control: rgb(0xF2E9E1),
+    control_h: rgb(0xDFDAD9),
+    sel: rgb(0xFFFAF3),
+    seg_on: rgb(0xFFFAF3),
+    line: rgba(0x575279, 0.1),
+    line2: rgba(0x575279, 0.16),
+    text: rgb(0x575279),
+    text2: rgb(0x797593),
+    text3: rgb(0x9893A5),
+    primary: rgb(0x575279),
+    primary_fg: rgb(0xFFFAF3),
+    live: rgb(0x286983),
+    rec: rgb(0xB4637A),
+    stream: rgb(0x907AA9),
+    warn: rgb(0xEA9D34),
+    danger: rgb(0xB4637A),
+    well: rgb(0xF4EDE8),
+    stage: rgb(0x0E0D15),
+    pop: rgb(0xFFFAF3),
+    dim: rgba(0xFAF4ED, 0.7),
+    meter_bg: rgba(0x575279, 0.08),
+    meter_g: rgb(0x56949F),
+    meter_y: rgb(0xEA9D34),
+    meter_r: rgb(0xB4637A),
+    wave_hi: rgb(0x797593),
+    sb_sel: rgba(0x575279, 0.05),
+    sb_hover: rgba(0xFFFAF3, 0.4),
+    scrim: rgba(0x26233A, 0.22),
+};
+
+// --- Themes (Vibe Clip) ---
+// Each theme has a dark and a light look; Settings → App picks the theme, and
+// Appearance (System, Light, Dark) which of its two looks shows.
+
+/// The chosen theme: an index into [`THEMES`].
+static THEME: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Every theme's two looks, (dark, light), in the order Settings lists them.
+pub const THEMES: [(&Pal, &Pal); 3] = [(&DARK, &LIGHT), (&GRUVBOX_DARK, &GRUVBOX_LIGHT), (&ROSE_PINE_DARK, &ROSE_PINE_LIGHT)];
+
+/// Switch theme (then re-apply the style: [`crate::ui_kit::apply_colors`]).
+pub fn set_theme(index: usize) {
+    THEME.store(index.min(THEMES.len() - 1) as u8, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The chosen theme's dark or light look.
+pub fn look(dark: bool) -> &'static Pal {
+    let (d, l) = THEMES[THEME.load(std::sync::atomic::Ordering::Relaxed) as usize];
+    if dark { d } else { l }
+}
+
 /// The colours of the look this `Ui` is drawn in.
 pub fn pal(ui: &egui::Ui) -> &'static Pal {
     of(ui.visuals())
 }
 
 pub fn of(v: &egui::Visuals) -> &'static Pal {
-    if v.dark_mode { &DARK } else { &LIGHT }
+    look(v.dark_mode)
 }
 
 pub fn ctx_pal(ctx: &egui::Context) -> &'static Pal {
-    if ctx.global_style().visuals.dark_mode { &DARK } else { &LIGHT }
+    look(ctx.global_style().visuals.dark_mode)
 }
 
 // --- Type ---

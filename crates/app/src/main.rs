@@ -199,6 +199,14 @@ fn main() -> eframe::Result<()> {
         .with_min_inner_size([560.0, 420.0])
         .with_title("Vibe Clip")
         .with_icon(app_icon());
+    // Dev aid: `VIBECLIP_OFFSCREEN=1` opens the window far off the screens and
+    // out of the taskbar, so a test run (a demo recording of it, say) never
+    // covers what you're doing.
+    let viewport = if std::env::var_os("VIBECLIP_OFFSCREEN").is_some() {
+        viewport.with_position([-20000.0, -20000.0]).with_taskbar(false).with_active(false)
+    } else {
+        viewport
+    };
     // macOS: no title bar; the rail runs to the top, under the traffic lights.
     #[cfg(target_os = "macos")]
     let viewport = viewport.with_fullsize_content_view(true).with_titlebar_shown(false).with_title_shown(false);
@@ -723,6 +731,8 @@ impl App {
         let screen_placement = std::sync::Arc::new(std::sync::Mutex::new(settings.screen_placement()));
         // egui keeps the window's frame in step (on Wayland, drawn by winit).
         ctx.set_theme(settings.theme.preference());
+        theme::set_theme(settings.color_theme.index());
+        ui_kit::apply_colors(&ctx);
         // Dev aid: `VIBECLIP_THEME=light|dark` for this launch only.
         match std::env::var("VIBECLIP_THEME").as_deref() {
             Ok("light") => ctx.set_theme(egui::ThemePreference::Light),

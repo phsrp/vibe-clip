@@ -591,7 +591,7 @@ impl AudioCapture {
         Ok(capture)
     }
 
-    /// Vibe Clip' own sound into the sources that take it: its app source
+    /// Vibe Clip's own sound into the sources that take it: its app source
     /// if it has one, else the desktop (unless the desktop leaves out apps
     /// with their own source).
     fn route_own_sound(&self) {
@@ -858,7 +858,7 @@ pub(crate) fn quiet_xruns(name: String) -> impl FnMut(cpal::Error) + Send + 'sta
     }
 }
 
-/// Vibe Clip' own sounds (the clip-saved cue) in desktop audio.
+/// Vibe Clip's own sounds (the clip-saved cue) in desktop audio.
 ///
 /// Desktop capture leaves out everything Vibe Clip plays, so a mic you
 /// "Listen" to never ends up in a clip twice. What it plays for you (clips,
@@ -872,14 +872,14 @@ pub mod own_sound {
 
     use crate::mixer::{RATE, SourceFeed};
 
-    /// The sources Vibe Clip' sound goes into; bumped generation on change.
+    /// The sources Vibe Clip's sound goes into; bumped generation on change.
     fn listeners() -> &'static Mutex<Vec<Weak<SourceFeed>>> {
         static LISTENERS: Mutex<Vec<Weak<SourceFeed>>> = Mutex::new(Vec::new());
         &LISTENERS
     }
     static GENERATION: AtomicU64 = AtomicU64::new(0);
 
-    /// `feed` takes Vibe Clip' sound (once, however often it's said).
+    /// `feed` takes Vibe Clip's sound (once, however often it's said).
     pub(crate) fn listen(feed: &Arc<SourceFeed>) {
         let mut d = listeners().lock().unwrap();
         d.retain(|w| w.strong_count() > 0);
@@ -889,7 +889,7 @@ pub mod own_sound {
         }
     }
 
-    /// `feed` doesn't take Vibe Clip' sound (any more).
+    /// `feed` doesn't take Vibe Clip's sound (any more).
     pub(crate) fn forget(feed: &Arc<SourceFeed>) {
         let mut d = listeners().lock().unwrap();
         let had = d.len();
@@ -900,7 +900,7 @@ pub mod own_sound {
     }
 
     /// One sound being played: what it pushes goes into every source taking
-    /// Vibe Clip' sound, including ones that start while it plays (the
+    /// Vibe Clip's sound, including ones that start while it plays (the
     /// player stays open across recordings).
     pub struct Playing {
         rate: u32,
@@ -921,7 +921,7 @@ pub mod own_sound {
             playing
         }
 
-        /// Into the sources taking Vibe Clip' sound right now.
+        /// Into the sources taking Vibe Clip's sound right now.
         fn follow(&mut self) {
             let generation = GENERATION.load(Ordering::Relaxed);
             if generation == self.generation {
@@ -966,7 +966,7 @@ pub mod own_sound {
     }
 }
 
-/// Vibe Clip' own id as an app source ([`SourceKind::App`]): its executable
+/// Vibe Clip's own id as an app source ([`SourceKind::App`]): its executable
 /// on Windows, its bundle id on macOS. None on Linux, where it isn't listed.
 pub fn own_app_id() -> Option<String> {
     #[cfg(target_os = "windows")]
@@ -1207,7 +1207,7 @@ mod tests {
         assert!(list[0].watch.new && list[0].watch.retry.is_none(), "the one taken out's open was taken for it: {:?}", list[0].watch);
     }
 
-    /// Vibe Clip' sound goes into a source that takes it once, however often
+    /// Vibe Clip's sound goes into a source that takes it once, however often
     /// that's said (the sources are routed again whenever one is added or
     /// taken out while capturing), and none goes in once it's forgotten.
     #[test]
@@ -1418,7 +1418,7 @@ mod tests {
         // A player open before the capture starts (at 44.1 kHz, 4 channels).
         let mut playing = own_sound::Playing::at(44_100);
         let live = LiveAudio::new();
-        let own = own_app_id().expect("Vibe Clip' own app id");
+        let own = own_app_id().expect("Vibe Clip's own app id");
         let desktop = AudioSource { kind: SourceKind::Desktop { exclude_app_sources: true }, ..src("Desktop", true, true) };
         let app = AudioSource { kind: SourceKind::App { bundle_id: own }, ..src("Vibe Clip", true, true) };
         let _monitor = LevelMonitor::start(&[desktop, app], live.clone()).unwrap();

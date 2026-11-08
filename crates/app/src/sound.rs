@@ -4,12 +4,12 @@
 //! Sounds are decoded once (ffmpeg, so any audio file works) and kept in
 //! memory; playing one opens the default output for as long as it lasts.
 //! Desktop capture leaves out what Vibe Clip plays, so as it plays the cue is
-//! also handed to the sources recording Vibe Clip' sound
+//! also handed to the sources recording Vibe Clip's sound
 //! (`capture::sources::own_sound`), unless that's turned off: like any other
 //! app's sound, it's in the clips saved after it.
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -68,10 +68,10 @@ pub fn gain(volume: f32) -> f32 {
     v * v
 }
 
-/// Add a sound file: check it plays, then copy it into Vibe Clip' sounds
+/// Add a sound file: check it plays, then copy it into Vibe Clip's sounds
 /// folder so it keeps working if the original is moved.
 pub fn add_custom(from: &Path, existing: &[CustomSound]) -> Result<CustomSound, String> {
-    decode(Source::File(from)).map_err(|e| format!("Couldn't read that sound: {e}"))?;
+    decode(from).map_err(|e| format!("Couldn't read that sound: {e}"))?;
     let dir = sounds_dir().ok_or("No settings folder")?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let stem = from.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Sound".into());
@@ -110,11 +110,6 @@ fn sounds_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("vibe-clip").join("sounds"))
 }
 
-enum Source<'a> {
-    Bytes(&'a [u8]),
-    File(&'a Path),
-}
-
 fn pcm(sound: &str) -> Result<Pcm, String> {
     if let Some(p) = cache().lock().ok().and_then(|c| c.get(sound).cloned()) {
         return Ok(p);
@@ -123,7 +118,7 @@ fn pcm(sound: &str) -> Result<Pcm, String> {
         "chime" => chime(),
         "blip" => blip(),
         s => match s.strip_prefix("file:") {
-            Some(path) => decode(Source::File(Path::new(path)))?,
+            Some(path) => decode(Path::new(path))?,
             None => blip(), // an id from a newer or older version (or HasteClip's "horse"): the default
         },
     });
@@ -133,37 +128,20 @@ fn pcm(sound: &str) -> Result<Pcm, String> {
     Ok(pcm)
 }
 
-/// Any audio ffmpeg reads, as stereo f32 at [`RATE`], at most [`MAX_SECONDS`].
-fn decode(src: Source) -> Result<Vec<f32>, String> {
-    let mut cmd = media::ffmpeg();
-    cmd.args(["-hide_banner", "-loglevel", "error", "-i"]);
-    match src {
-        Source::Bytes(_) => cmd.arg("pipe:0"),
-        Source::File(p) => cmd.arg(p),
-    };
-    let mut child = cmd
+/// Any audio file ffmpeg reads, as stereo f32 at [`RATE`], at most [`MAX_SECONDS`].
+fn decode(file: &Path) -> Result<Vec<f32>, String> {
+    let mut child = media::ffmpeg()
+        .args(["-hide_banner", "-loglevel", "error", "-i"])
+        .arg(file)
         .args(["-vn", "-t", &MAX_SECONDS.to_string(), "-ac", "2", "-ar", &RATE.to_string(), "-f", "f32le", "-"])
-        .stdin(if matches!(src, Source::Bytes(_)) { Stdio::piped() } else { Stdio::null() })
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("ffmpeg: {e}"))?;
-    let writer = match src {
-        Source::Bytes(b) => {
-            let mut stdin = child.stdin.take().ok_or("no ffmpeg input")?;
-            let bytes = b.to_vec();
-            Some(std::thread::spawn(move || {
-                let _ = stdin.write_all(&bytes);
-            }))
-        }
-        Source::File(_) => None,
-    };
     let mut out = Vec::new();
     child.stdout.take().ok_or("no ffmpeg output")?.read_to_end(&mut out).map_err(|e| e.to_string())?;
     let _ = child.wait();
-    if let Some(w) = writer {
-        let _ = w.join();
-    }
     if out.len() < 8 {
         return Err("no audio in it".into());
     }

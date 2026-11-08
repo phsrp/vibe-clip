@@ -124,7 +124,7 @@ fn group_matches(name: &str, f: &Filter) -> bool {
         "Shortcuts" => f.shows(&["shortcuts", "hotkey", "keyboard", "save clip", "take a screenshot", "start or stop clipping", "start or stop recording", "fullscreen games", "input monitoring", "permission", "system settings"]),
         #[cfg(target_os = "macos")]
         "Permissions" => crate::setup::Need::ALL.iter().any(|n| f.shows(n.words()) || f.shows(&[n.label()])) || f.shows(&["permissions", "privacy", "allow"]),
-        "App" => f.shows(&["appearance", "theme", "dark", "light", "system", "open at login", "autostart", "startup", "start with", "closing the window", "tray", "menu bar", "quit", "discord", "activity", "rich presence"]),
+        "App" => f.shows(&["appearance", "theme", "colours", "colors", "gruvbox", "rosé pine", "rose pine", "dark", "light", "system", "open at login", "autostart", "startup", "start with", "closing the window", "tray", "menu bar", "quit", "discord", "activity", "rich presence"]),
         "About" => f.shows(&["update", "version", "what's new", "license", "licence", "about", "source code", "copyright", "open source", "reset", "defaults"]),
         _ => false,
     }
@@ -903,6 +903,17 @@ impl App {
                     }
                 });
             }
+            if f.shows(&["theme", "colours", "colors", "gruvbox", "rosé pine", "rose pine", "default"]) {
+                l.row(Row::new("Theme").tip("Theme", "The app's colours. Each theme has a dark and a light look: Appearance picks which one shows."), |ui| {
+                    let chosen = self.settings.color_theme.index();
+                    let opts = settings::ColorTheme::ALL.map(|t| Seg { icon: None, label: t.label(), tip: None });
+                    if let Some(i) = ui_kit::segmented_opts(ui, "color_theme", &opts, chosen, None, true) {
+                        self.settings.color_theme = settings::ColorTheme::ALL[i];
+                        theme::set_theme(i);
+                        ui_kit::apply_colors(ui.ctx());
+                    }
+                });
+            }
             if f.shows(&["open at login", "autostart", "startup", "start with"]) {
                 let mut on = crate::autostart::is_on();
                 let (r, _) = l.row(Row::new(crate::autostart::label()), |ui| ui_kit::switch(ui, &mut on));
@@ -1337,6 +1348,8 @@ impl App {
                     self.settings = fresh;
                     self.confirm_reset = false;
                     ui.ctx().set_theme(self.settings.theme.preference());
+                    theme::set_theme(self.settings.color_theme.index());
+                    ui_kit::apply_colors(ui.ctx());
                     self.toast_icon(icon::ARROW_COUNTER_CLOCKWISE, "Settings reset to defaults");
                 }
                 if ui.add(ui_kit::button("Cancel", false).ghost()).clicked() {

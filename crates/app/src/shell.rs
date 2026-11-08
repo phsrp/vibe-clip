@@ -160,7 +160,7 @@ pub fn tint_title_bar(window: &impl raw_window_handle::HasWindowHandle, caption:
     let Ok(handle) = window.window_handle() else { return };
     let RawWindowHandle::Win32(h) = handle.as_raw() else { return };
     let hwnd = HWND(h.hwnd.get() as *mut _);
-    let p = if dark { &theme::DARK } else { &theme::LIGHT };
+    let p = theme::look(dark);
     let caption = COLORREF(colorref(caption));
     let text = COLORREF(colorref(p.text));
     // The window buttons' glyphs follow the dark flag, not the caption colour.

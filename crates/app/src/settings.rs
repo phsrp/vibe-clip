@@ -184,6 +184,31 @@ impl StreamCfg {
     }
 }
 
+/// The colours: HasteClip's own (Default), Gruvbox or Rosé Pine, each with a
+/// dark and a light look ([`Theme`] picks which of the two shows).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ColorTheme {
+    #[default]
+    Default,
+    Gruvbox,
+    RosePine,
+}
+
+impl ColorTheme {
+    pub const ALL: [ColorTheme; 3] = [ColorTheme::Default, ColorTheme::Gruvbox, ColorTheme::RosePine];
+    pub fn label(self) -> &'static str {
+        match self {
+            ColorTheme::Default => "Default",
+            ColorTheme::Gruvbox => "Gruvbox",
+            ColorTheme::RosePine => "Rosé Pine",
+        }
+    }
+    /// Its place in [`crate::theme::THEMES`].
+    pub fn index(self) -> usize {
+        Self::ALL.iter().position(|t| *t == self).unwrap_or(0)
+    }
+}
+
 /// Light or dark look: the system's, or one chosen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Theme {
@@ -1096,6 +1121,8 @@ pub struct RecordSettings {
     pub game_folders: std::collections::BTreeMap<String, String>,
     /// Light, dark, or the system's.
     pub theme: Theme,
+    /// Which colours: Default, Gruvbox or Rosé Pine.
+    pub color_theme: ColorTheme,
     /// Closing the window keeps Vibe Clip running in the tray (where
     /// there is one) instead of quitting.
     pub close_to_tray: bool,
@@ -1198,6 +1225,7 @@ impl Default for RecordSettings {
             delete_permanently: false,
             library_sort: LibrarySort::Newest,
             theme: Theme::System,
+            color_theme: ColorTheme::Default,
             close_to_tray: true,
             close_asked: false,
             setup_shown: 0,
@@ -1229,7 +1257,7 @@ pub struct SaveSound {
     pub sound: String,
     /// 0..=1, applied on a curve (see `sound::gain`).
     pub volume: f32,
-    /// Sounds you've added, copied into Vibe Clip' own folder.
+    /// Sounds you've added, copied into Vibe Clip's own folder.
     pub custom: Vec<CustomSound>,
     /// Recorded like any other app's sound (in what's recorded after it).
     pub recorded: bool,

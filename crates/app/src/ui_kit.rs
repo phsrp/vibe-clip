@@ -100,8 +100,14 @@ pub fn section_head(ui: &mut egui::Ui, text: &str, first: bool, extra: impl FnOn
 /// Set the look for both themes. Called once at start-up.
 pub fn apply(ctx: &egui::Context) {
     theme::install_fonts(ctx);
-    for (theme, p) in [(egui::Theme::Dark, &theme::DARK), (egui::Theme::Light, &theme::LIGHT)] {
-        ctx.style_mut_of(theme, |style| style_for(style, p));
+    apply_colors(ctx);
+}
+
+/// Set the chosen theme's dark and light looks (at start-up, and when the
+/// theme is changed in Settings).
+pub fn apply_colors(ctx: &egui::Context) {
+    for (which, dark) in [(egui::Theme::Dark, true), (egui::Theme::Light, false)] {
+        ctx.style_mut_of(which, |style| style_for(style, theme::look(dark)));
     }
 }
 
