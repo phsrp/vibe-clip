@@ -13,7 +13,7 @@ use crate::portal_shortcuts::APP_ID;
 
 const DESKTOP_FILE: &str = include_str!("../assets/io.github.phsrp.VibeClip.desktop");
 /// The glyph without the macOS plate, as on Windows, at each size of the
-/// icon theme's (made by scripts/icons.sh). PNGs, not an SVG: KDE draws an
+/// icon theme's (made by scripts/icons.py). PNGs, not an SVG: KDE draws an
 /// SVG icon with Qt, which ignores paint-order (the glyph's keyline covered
 /// it), and the bigger sizes' soft shadow is a blur no SVG icon can count on.
 const ICONS: [(u32, &[u8]); 10] = [
