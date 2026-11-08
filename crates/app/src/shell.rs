@@ -293,7 +293,7 @@ impl App {
         let top = rect.top() + if under_titlebar() { 52.0 } else { 9.0 };
         let on = match self.page {
             Page::Clips | Page::View | Page::Edit => Page::Clips,
-            Page::VoiceReview | Page::Settings => Page::Settings,
+            Page::Settings => Page::Settings,
             Page::Sources => Page::Sources,
         };
         let places = [

@@ -84,7 +84,7 @@ impl Pane {
     /// the heading), the others under their own.
     fn groups(self) -> &'static [&'static str] {
         match self {
-            Pane::Clipping => &["Clipping", "Saved sound", "Voice"],
+            Pane::Clipping => &["Clipping", "Saved sound"],
             Pane::Video => &["Video", "Motion", "File", "Capture"],
             Pane::Streaming => &["Streaming"],
             Pane::Clips => &["Clips", "Screenshots"],
@@ -124,7 +124,6 @@ fn group_matches(name: &str, f: &Filter) -> bool {
         "Shortcuts" => f.shows(&["shortcuts", "hotkey", "keyboard", "save clip", "take a screenshot", "start or stop clipping", "start or stop recording", "fullscreen games", "input monitoring", "permission", "system settings"]),
         #[cfg(target_os = "macos")]
         "Permissions" => crate::setup::Need::ALL.iter().any(|n| f.shows(n.words()) || f.shows(&[n.label()])) || f.shows(&["permissions", "privacy", "allow"]),
-        "Voice" => f.shows(&["save by voice", "hasteclip that", "speech", "command", "voice samples", "review", "keep", "improve"]),
         "App" => f.shows(&["appearance", "theme", "dark", "light", "system", "open at login", "autostart", "startup", "start with", "closing the window", "tray", "menu bar", "quit", "discord", "activity", "rich presence"]),
         "About" => f.shows(&["update", "version", "what's new", "license", "licence", "about", "source code", "copyright", "open source", "reset", "defaults"]),
         _ => false,
@@ -307,7 +306,6 @@ impl App {
             "Shortcuts" => self.shortcuts_group(ui, f),
             #[cfg(target_os = "macos")]
             "Permissions" => self.permissions_group(ui, f),
-            "Voice" => self.voice_group(ui, f),
             "App" => self.app_group(ui, f),
             "About" => self.about_group(ui, f),
             _ => {}
@@ -890,39 +888,6 @@ impl App {
         if !all {
             // Back from System Settings, it shows as allowed.
             ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
-        }
-    }
-
-    fn voice_group(&mut self, ui: &mut egui::Ui, f: &Filter) {
-        let problem = self.voice.problem.lock().unwrap().clone();
-        let note = if self.settings.voice_clip {
-            match (problem, self.voice_mic().is_none()) {
-                (Some(p), _) => format!("Can't listen: {p}"),
-                (None, true) => "Add a microphone on the Sources page to use it".to_owned(),
-                _ => "Say “HasteClip that”".to_owned(),
-            }
-        } else {
-            "Say “HasteClip that”".to_owned()
-        };
-        let (to_hear, all) = self.voice_review.summary();
-        let mut review = false;
-        ui_kit::list(ui, "voice", |l| {
-            if f.shows(&["save by voice", "hasteclip that", "speech", "command", "voice"]) {
-                l.row(Row::new("Save by voice").tip("Save by voice", "While clipping, say “HasteClip that” to save a clip; while recording, to mark the moment. Listening happens on this computer, for this phrase only.").note(note), |ui| ui_kit::switch(ui, &mut self.settings.voice_clip));
-            }
-            if f.shows(&["voice samples", "keep", "review", "improve"]) {
-                l.row(Row::new("Keep voice samples").tip("Keep voice samples", "Keeps about 6 seconds of your microphone each time the command saves a clip or nearly does. You can listen to them and mark which should have saved a clip, to help improve the detector. They stay on this computer."), |ui| ui_kit::switch(ui, &mut self.settings.voice_samples));
-                let open = self.settings.voice_samples || all > 0;
-                l.well("samples_well", open, |l| {
-                    let label = if to_hear > 0 { format!("{to_hear} samples to listen to") } else if all > 0 { format!("{all} samples") } else { "No samples yet".to_owned() };
-                    l.row(Row::new(&label).kid(), |ui| {
-                        review = Btn::normal("Review").small().enabled(all > 0).show(ui).clicked();
-                    });
-                });
-            }
-        });
-        if review {
-            self.open_voice_review();
         }
     }
 

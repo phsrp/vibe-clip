@@ -85,9 +85,6 @@ mod gpu_frames;
 mod scrub;
 #[cfg(hw_decode)]
 mod video;
-mod voice;
-mod voice_review;
-mod voice_samples;
 mod web_images;
 mod viewer;
 mod waveform;
@@ -322,8 +319,6 @@ pub(crate) enum Page {
     Clips,
     Sources,
     Settings,
-    /// Listening through the voice detector's samples (opened from Settings).
-    VoiceReview,
     Edit,
     View,
 }
@@ -710,9 +705,6 @@ struct App {
     pub(crate) presence: discord::Presence,
     /// Saves a clip as Save clip is pressed, frames or not.
     quick_save: service::QuickSave,
-    /// Listens for "HasteClip that".
-    pub(crate) voice: voice::Voice,
-    pub(crate) voice_review: voice_review::Review,
     /// The game being clipped, for Discord: its app's id, the game, and when
     /// we last checked it's still open.
     clipped_game: Option<(String, discord::Game, Instant)>,
@@ -805,8 +797,6 @@ impl App {
                 ["HASTECLIP_OPEN_", "HASTECLIP_DEMO_", "HASTECLIP_LIBRARY", "HASTECLIP_SETTINGS"].iter().any(|p| k.starts_with(p))
             }),
             service,
-            voice: voice::Voice::new(quick_save.clone(), live_audio.clone(), ctx.clone()),
-            voice_review: Default::default(),
             quick_save,
             hotkeys,
             recording_shortcut: None,
@@ -1010,11 +1000,6 @@ impl App {
             app.page = Page::Sources;
             app.sources_view.open_dev(&v.to_string_lossy());
         }
-        // `HASTECLIP_OPEN_VOICE_REVIEW=1` opens the voice samples review.
-        let open_review = std::env::var_os("HASTECLIP_OPEN_VOICE_REVIEW").is_some();
-        if open_review {
-            app.open_voice_review();
-        }
         // `HASTECLIP_OPEN_SETTINGS=1` opens on Settings; `=video` (any
         // pane's name) on that pane; `=names` on the Clips pane's
         // Clip names page, any other value searches for it.
@@ -1040,7 +1025,7 @@ impl App {
         app.start_key_tap();
         // Never miss a moment: arm the buffer on launch (unless it can't work
         // yet, or the permissions screen is up: it starts when that closes).
-        if app.settings.auto_start_buffer && !open_sources && !open_review && !app.setup_open && app.permission != capture::Permission::Denied {
+        if app.settings.auto_start_buffer && !open_sources && !app.setup_open && app.permission != capture::Permission::Denied {
             app.start_replay_buffer();
         }
         if demo::on() && demo::clipping_from_start() {
@@ -1370,7 +1355,6 @@ impl eframe::App for App {
                 Page::Clips => self.library(ui, frame),
                 Page::Sources => self.sources_page(ui),
                 Page::Settings => self.settings_page(ui),
-                Page::VoiceReview => self.voice_review_page(ui),
                 // The player and editor have no rail or shared heading: all of
                 // them arrives.
                 Page::Edit => ui_kit::arrive(ui, |ui| self.editor_page(ui)),
@@ -1384,7 +1368,6 @@ impl eframe::App for App {
             Page::Clips => "library page",
             Page::Sources => "sources page",
             Page::Settings => "settings page",
-            Page::VoiceReview => "voice samples page",
             Page::Edit => "editor page",
             Page::View => "player page",
         });
@@ -1695,17 +1678,6 @@ impl App {
             }
         }
 
-        // "HasteClip that": saved already, as it was said.
-        for _ in 0..self.voice.heard() {
-            self.clip_saving();
-        }
-        // Not while samples are played on the speakers: the detector would hear them.
-        // (Never in a demo recording: it clips nothing, and the mic stays shut.)
-        // While recording, it marks the moment.
-        let listen = self.settings.voice_clip && (self.rec_state.clipping || self.rec_state.recording) && self.recording_shortcut.is_none() && self.page != Page::VoiceReview && self.demo.is_none();
-        self.voice.collect(self.settings.voice_samples);
-        let mic = listen.then(|| self.voice_mic()).flatten();
-        self.voice.listen(mic.as_deref());
         self.pump_capture_events();
         self.follow_sessions();
         let capturing = games::Capturing { buffer: self.rec_state.clipping.then_some(self.settings.replay_seconds), record: self.rec_state.recording };
@@ -2045,12 +2017,6 @@ impl App {
                 self.clipped_game = None;
             }
         }
-    }
-
-    /// The microphone "HasteClip that" is heard through: the first
-    /// one on the Sources page that's being captured.
-    fn voice_mic(&self) -> Option<String> {
-        self.settings.audio_sources.iter().find(|s| s.enabled && matches!(s.kind, settings::SourceKind::Microphone { .. })).map(|s| s.id.clone())
     }
 
     /// The games and apps list, as (id, name).
@@ -2669,7 +2635,6 @@ impl App {
         let dir = self.clip_folder();
         self.service.save_clip(dir, self.games.clip_details());
         sound::play_saved(&self.settings.save_sound);
-        self.voice.saved_by_hand();
         self.clip_saving();
     }
 

@@ -1082,11 +1082,6 @@ pub struct RecordSettings {
     pub discord_presence: bool,
     /// Going live: where to, and how.
     pub stream: StreamCfg,
-    /// Saying "HasteClip that" saves a clip (while the replay buffer runs).
-    pub voice_clip: bool,
-    /// Keep short snippets of the microphone around what the voice detector fires on or
-    /// nearly fires on, to listen through and label (never sent anywhere by itself).
-    pub voice_samples: bool,
 
     // --- Advanced (collapsible; sane defaults) ---
     pub encoder: Encoder,
@@ -1193,8 +1188,6 @@ impl Default for RecordSettings {
             // HasteClip. Settings saved before keep theirs (off).
             discord_presence: true,
             stream: StreamCfg::default(),
-            voice_clip: true,
-            voice_samples: false,
             encoder: Encoder::Auto,
             container: Container::Mp4,
             rate_control: RateControl::Cbr,

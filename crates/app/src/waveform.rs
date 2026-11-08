@@ -140,6 +140,7 @@ impl Waveform {
 
     /// Draw `(from, span)` seconds into `lane`, mirrored around its middle, with
     /// `gain_at(t)` applied and each column coloured by `color(peak, rms)`.
+    #[allow(dead_code)] // (was only used to show voice samples)
     pub fn paint(&self, p: &Painter, lane: Rect, view: (f64, f64), gain_at: impl Fn(f64) -> f32, color: impl Fn(f32, f32) -> Color32) {
         p.extend(self.shapes(p.pixels_per_point(), lane, view, gain_at, color));
     }

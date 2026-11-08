@@ -115,7 +115,7 @@ impl Need {
         match self {
             Need::Screen => "Needed to clip anything.",
             Need::Keys => "Keeps your shortcuts working in games that take over the whole screen in fullscreen.",
-            Need::Microphone => "For a microphone in your clips, and saving by voice.",
+            Need::Microphone => "For a microphone in your clips.",
             Need::Camera => "For your webcam in your clips.",
         }
     }

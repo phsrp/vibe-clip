@@ -300,16 +300,6 @@ pub fn reveal(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, sho
     ui.allocate_space(vec2(width, h));
 }
 
-/// A group: content on the raised surface, padded. Its height eases when
-/// what's in it changes (see [`eased_frame`]); `id` names it on its page.
-pub fn card<R>(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    let frame = egui::Frame::new().fill(theme::pal(ui).raise).corner_radius(CARD_RADIUS).inner_margin(Margin::symmetric(16, 12));
-    eased_frame(ui, egui::Id::new(("card", id)), frame, |ui| {
-        ui.set_width(ui.available_width());
-        add(ui)
-    })
-}
-
 /// Scrolling content with a slim scrollbar in the page's right margin.
 pub fn scroll<R>(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let reset = ui.ctx().data(|d| d.get_temp::<bool>(scroll_reset_id())).unwrap_or(false);
@@ -438,21 +428,6 @@ pub fn arrive_on<R>(ui: &mut egui::Ui, bg: Color32, add: impl FnOnce(&mut egui::
         list.add(area.intersect(ui.clip_rect()), egui::Shape::rect_filled(area, 0, veil));
     });
     r
-}
-
-/// A page of settings-like content: scrolls, left-aligned on the page's
-/// margin, at most `max_width` wide.
-pub fn page(ui: &mut egui::Ui, id: &str, max_width: f32, add: impl FnOnce(&mut egui::Ui)) {
-    arrive(ui, |ui| {
-        scroll(ui, id, |ui| {
-            let w = ui.available_width().min(max_width);
-            ui.vertical(|ui| {
-                ui.set_width(w);
-                add(ui);
-                ui.add_space(28.0);
-            });
-        })
-    });
 }
 
 /// A short line of help: smaller and quieter than what it explains, wrapping.
