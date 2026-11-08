@@ -3,8 +3,8 @@
 //!
 //! Sounds are decoded once (ffmpeg, so any audio file works) and kept in
 //! memory; playing one opens the default output for as long as it lasts.
-//! Desktop capture leaves out what HasteClip plays, so as it plays the cue is
-//! also handed to the sources recording HasteClip' sound
+//! Desktop capture leaves out what Vibe Clip plays, so as it plays the cue is
+//! also handed to the sources recording Vibe Clip' sound
 //! (`capture::sources::own_sound`), unless that's turned off: like any other
 //! app's sound, it's in the clips saved after it.
 
@@ -20,9 +20,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crate::settings::{CustomSound, SaveSound};
 
 /// Built-in sounds: id and name.
-pub const BUILTIN: [(&str, &str); 2] = [("horse", "Horse"), ("chime", "Chime")];
-
-const HORSE: &[u8] = include_bytes!("../assets/sounds/horse.ogg");
+pub const BUILTIN: [(&str, &str); 2] = [("blip", "Blip"), ("chime", "Chime")];
 /// Decoded sounds are stereo f32 at this rate.
 const RATE: u32 = 48_000;
 /// Longer sounds are cut off: it's a cue, not a song.
@@ -37,7 +35,7 @@ fn cache() -> &'static Mutex<HashMap<String, Pcm>> {
 
 /// The clip-saved sound, if it's on.
 pub fn play_saved(cfg: &SaveSound) {
-    // A demo recording or a muted test instance (`HASTECLIP_MUTE`) stays quiet.
+    // A demo recording or a muted test instance (`VIBECLIP_MUTE`) stays quiet.
     if cfg.enabled && !crate::player::dev_muted() && !crate::demo::on() {
         play(&cfg.sound, cfg.volume, cfg.recorded);
     }
@@ -70,7 +68,7 @@ pub fn gain(volume: f32) -> f32 {
     v * v
 }
 
-/// Add a sound file: check it plays, then copy it into HasteClip' sounds
+/// Add a sound file: check it plays, then copy it into Vibe Clip' sounds
 /// folder so it keeps working if the original is moved.
 pub fn add_custom(from: &Path, existing: &[CustomSound]) -> Result<CustomSound, String> {
     decode(Source::File(from)).map_err(|e| format!("Couldn't read that sound: {e}"))?;
@@ -109,7 +107,7 @@ pub fn id_of(sound: &CustomSound) -> String {
 }
 
 fn sounds_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("hasteclip").join("sounds"))
+    dirs::config_dir().map(|d| d.join("vibe-clip").join("sounds"))
 }
 
 enum Source<'a> {
@@ -123,10 +121,10 @@ fn pcm(sound: &str) -> Result<Pcm, String> {
     }
     let pcm = Arc::new(match sound {
         "chime" => chime(),
-        "horse" => decode(Source::Bytes(HORSE))?,
+        "blip" => blip(),
         s => match s.strip_prefix("file:") {
             Some(path) => decode(Source::File(Path::new(path)))?,
-            None => decode(Source::Bytes(HORSE))?, // an id from a newer or older version: the default
+            None => blip(), // an id from a newer or older version (or HasteClip's "horse"): the default
         },
     });
     if let Ok(mut c) = cache().lock() {
@@ -170,6 +168,33 @@ fn decode(src: Source) -> Result<Vec<f32>, String> {
         return Err("no audio in it".into());
     }
     Ok(out.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect())
+}
+
+/// The default save sound: two quick, soft "bloops" rising in pitch, each
+/// sliding up into its note (a short, friendly "clip saved" cue).
+fn blip() -> Vec<f32> {
+    use std::f32::consts::TAU;
+    let rate = RATE as f32;
+    // A note whose pitch glides from `from` to `to` (time constant `glide`),
+    // starting at `start`: the phase is the integral of that frequency.
+    let pop = |from: f32, to: f32, start: f32, t: f32| -> f32 {
+        let t = t - start;
+        if t < 0.0 {
+            return 0.0;
+        }
+        let glide = 0.018;
+        let phase = TAU * (to * t + (from - to) * glide * (1.0 - (-t / glide).exp()));
+        let env = (t / 0.003).min(1.0) * (-t * 20.0).exp();
+        env * (phase.sin() + 0.18 * (2.0 * phase).sin() + 0.06 * (3.0 * phase).sin())
+    };
+    let n = (rate * 0.36) as usize;
+    (0..n)
+        .flat_map(|i| {
+            let t = i as f32 / rate;
+            let s = 0.32 * (pop(560.0, 987.8, 0.0, t) + 0.9 * pop(880.0, 1479.98, 0.075, t));
+            [s, s]
+        })
+        .collect()
 }
 
 /// A short two-note chime.
@@ -246,10 +271,11 @@ mod tests {
 
     #[test]
     fn builtins_decode() {
-        let h = decode(Source::Bytes(HORSE)).unwrap();
-        let secs = h.len() as f64 / 2.0 / RATE as f64;
-        assert!((1.4..1.7).contains(&secs), "{secs}");
-        assert!(h.iter().any(|x| x.abs() > 0.05), "not silent");
+        let b = blip();
+        let secs = b.len() as f64 / 2.0 / RATE as f64;
+        assert!((0.3..0.4).contains(&secs), "{secs}");
+        assert!(b.iter().any(|x| x.abs() > 0.05), "not silent");
+        assert!(b.iter().all(|x| x.abs() <= 1.0), "no clipping");
         assert!(chime().iter().all(|x| x.abs() <= 1.0));
     }
 }

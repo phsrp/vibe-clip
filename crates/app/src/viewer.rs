@@ -170,7 +170,7 @@ struct Ready {
     wave: Arc<crate::waveform::Live>,
     /// Dragging on the timeline, and whether it was playing when the drag began.
     dragging: Option<bool>,
-    /// The drag is `HASTECLIP_DEV_DRAG`'s: no button is down, and that
+    /// The drag is `VIBECLIP_DEV_DRAG`'s: no button is down, and that
     /// doesn't end it.
     dev_dragging: bool,
     /// Last scroll-scrub, and whether it was playing before scrolling began.
@@ -581,9 +581,9 @@ impl Ready {
     fn new(ctx: &egui::Context, clip: &Path, l: Loaded, resume: Option<Resume>, handoff: &mut Handoff) -> Self {
         let wave = crate::waveform::follow(l.pcm.clone(), 0, ctx);
         let (mut player, curtain, taken) = Player::handed_over(ctx, clip, &l.info, l.pcm, Vec::new(), handoff.player.take());
-        // Dev aid: `HASTECLIP_START_AT=<seconds>` starts there (to check a
+        // Dev aid: `VIBECLIP_START_AT=<seconds>` starts there (to check a
         // stretch of a clip without scrubbing to it).
-        if let Some(t) = std::env::var("HASTECLIP_START_AT").ok().and_then(|s| s.parse::<f64>().ok()) {
+        if let Some(t) = std::env::var("VIBECLIP_START_AT").ok().and_then(|s| s.parse::<f64>().ok()) {
             player.seek(t);
         }
         if let Some(r) = resume
@@ -1196,13 +1196,13 @@ fn set_fullscreen(ctx: &egui::Context, on: bool) {
     }
 }
 
-/// Dev aid: `HASTECLIP_DEV_WHEEL=3.0:-40,3.3:-40` scrolls by those points at
+/// Dev aid: `VIBECLIP_DEV_WHEEL=3.0:-40,3.3:-40` scrolls by those points at
 /// those times (seconds since start), as wheel notches would, to reproduce
 /// wheel scrubbing without touching the mouse.
 fn dev_wheel() -> f32 {
     static PLAN: std::sync::OnceLock<std::sync::Mutex<Vec<(f64, f32)>>> = std::sync::OnceLock::new();
     let plan = PLAN.get_or_init(|| {
-        let spec = std::env::var("HASTECLIP_DEV_WHEEL").unwrap_or_default();
+        let spec = std::env::var("VIBECLIP_DEV_WHEEL").unwrap_or_default();
         let steps = spec.split(',').filter_map(|s| s.split_once(':')).filter_map(|(t, d)| Some((t.trim().parse().ok()?, d.trim().parse().ok()?))).collect();
         std::sync::Mutex::new(steps)
     });
@@ -1213,7 +1213,7 @@ fn dev_wheel() -> f32 {
     due
 }
 
-/// Dev aid: `HASTECLIP_DEV_DRAG=4-6:10-20,8-9:30-25` drags the playhead
+/// Dev aid: `VIBECLIP_DEV_DRAG=4-6:10-20,8-9:30-25` drags the playhead
 /// from 10 s to 20 s of the clip between 4 and 6 s after start, then from
 /// 30 s back to 25 s, as the mouse would, to reproduce drag scrubbing
 /// without touching the mouse. `Some(Some(t))`: dragging to `t` now;
@@ -1223,7 +1223,7 @@ fn dev_drag(ctx: &egui::Context) -> Option<Option<f64>> {
     type Plan = (Vec<[f64; 4]>, bool);
     static PLAN: std::sync::OnceLock<std::sync::Mutex<Plan>> = std::sync::OnceLock::new();
     let plan = PLAN.get_or_init(|| {
-        let spec = std::env::var("HASTECLIP_DEV_DRAG").unwrap_or_default();
+        let spec = std::env::var("VIBECLIP_DEV_DRAG").unwrap_or_default();
         let range = |s: &str| -> Option<(f64, f64)> {
             let (a, b) = s.split_once('-')?;
             Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
@@ -1257,14 +1257,14 @@ fn dev_drag(ctx: &egui::Context) -> Option<Option<f64>> {
     None
 }
 
-/// Dev aid: `HASTECLIP_DEV_HOLD=4-8:,` holds `,` (or `.`) down from 4 to 8 s
+/// Dev aid: `VIBECLIP_DEV_HOLD=4-8:,` holds `,` (or `.`) down from 4 to 8 s
 /// after start, as a held key does on Windows (a press, then repeats 30
 /// times a second after half a second), to reproduce frame stepping without
 /// touching the keyboard. Presses due now, the key, and whether they repeat.
 fn dev_hold() -> Option<(u32, Key, bool)> {
     static PLAN: std::sync::OnceLock<std::sync::Mutex<(Vec<(f64, f64, Key)>, u32)>> = std::sync::OnceLock::new();
     let plan = PLAN.get_or_init(|| {
-        let spec = std::env::var("HASTECLIP_DEV_HOLD").unwrap_or_default();
+        let spec = std::env::var("VIBECLIP_DEV_HOLD").unwrap_or_default();
         let holds = spec
             .split(';')
             .filter_map(|s| s.split_once(':'))

@@ -1,4 +1,4 @@
-# Working on HasteClip
+# Working on Vibe Clip
 
 ## Inputs
 
@@ -18,5 +18,5 @@ rather than inventing a new kind of input. In short:
 - Free text (a name, a search) is the only place letters are typed.
 
 `clippy.toml` turns away egui's own `DragValue`, `Slider` and bare `TextEdit`
-in the app. Run `cargo clippy -p hasteclip` after UI changes; a box that really
+in the app. Run `cargo clippy -p vibe-clip` after UI changes; a box that really
 is for free text says so with `#[allow(clippy::disallowed_methods)]` and why.

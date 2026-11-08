@@ -1,9 +1,9 @@
 //! Updating the macOS app: the next release's `.app`, swapped in for this one.
 //!
-//! An update is the release's zipped app (`HasteClip-mac-arm64.zip`, beside
+//! An update is the release's zipped app (`VibeClip-mac-arm64.zip`, beside
 //! the `.dmg` people install from): found on GitHub, downloaded and checked
 //! against its `.sha256`, unzipped next to the app, and accepted only if
-//! it's signed with HasteClip's own certificate. That certificate is what
+//! it's signed with Vibe Clip's own certificate. That certificate is what
 //! keeps macOS's permissions (Screen Recording, Input Monitoring) with the
 //! app from one version to the next, and what says the download is ours:
 //! the checksum comes from the same place as the download, the signature
@@ -22,19 +22,19 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 
-const ZIP: &str = "HasteClip-mac-arm64.zip";
+const ZIP: &str = "VibeClip-mac-arm64.zip";
 /// GitHub's API for the repo's releases, newest first.
-const RELEASES: &str = "https://api.github.com/repos/hasteclip/hasteclip/releases?per_page=10";
+const RELEASES: &str = "https://api.github.com/repos/phsrp/vibe-clip/releases?per_page=10";
 /// What the new app's signature must say: our identifier, our certificate
 /// (`codesign -dr -` on a release). Anything else isn't put in place.
-const REQUIREMENT: &str = r#"=identifier "io.github.kaillr.HasteClip" and certificate root = H"57f24a68cb31a35998890f8b6f9b94b74918c2ea""#;
+const REQUIREMENT: &str = r#"=identifier "io.github.phsrp.VibeClip" and certificate root = H"57f24a68cb31a35998890f8b6f9b94b74918c2ea""#;
 
 /// The installed app bundle, if it's one we can update: signed as a release
 /// is, somewhere that isn't a disk image or a build folder, and ours to
 /// replace.
 pub fn install_dir() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    // …/HasteClip.app/Contents/MacOS/hasteclip
+    // …/Vibe Clip.app/Contents/MacOS/vibe-clip
     let app = exe.parent()?.parent()?.parent()?.to_path_buf();
     if app.extension().is_none_or(|e| e != "app") {
         return None;
@@ -50,13 +50,13 @@ pub fn install_dir() -> Option<PathBuf> {
 /// it, and takes its place.
 pub fn writable(app: &Path) -> bool {
     let Some(dir) = app.parent() else { return false };
-    let f = dir.join(format!(".hasteclip-write-test-{}", std::process::id()));
+    let f = dir.join(format!(".vibeclip-write-test-{}", std::process::id()));
     let ok = std::fs::write(&f, b"").is_ok();
     let _ = std::fs::remove_file(&f);
     ok
 }
 
-/// Whether `app` is signed with HasteClip's certificate and sealed whole.
+/// Whether `app` is signed with Vibe Clip's certificate and sealed whole.
 fn signed_by_us(app: &Path) -> bool {
     Command::new("codesign")
         .args(["--verify", "--deep", "--strict", "-R", REQUIREMENT])
@@ -87,10 +87,10 @@ pub fn check(current: &str) -> Result<Option<Release>> {
         prerelease: bool,
         assets: Vec<Asset>,
     }
-    // `HASTECLIP_RELEASES=<url>`: another list in GitHub's form, to try an update.
-    let url = std::env::var("HASTECLIP_RELEASES").unwrap_or_else(|_| RELEASES.to_owned());
+    // `VIBECLIP_RELEASES=<url>`: another list in GitHub's form, to try an update.
+    let url = std::env::var("VIBECLIP_RELEASES").unwrap_or_else(|_| RELEASES.to_owned());
     let releases: Vec<GhRelease> = ureq::get(&url)
-        .header("User-Agent", "HasteClip-updater")
+        .header("User-Agent", "VibeClip-updater")
         .header("Accept", "application/vnd.github+json")
         .call()
         .context("GitHub didn't answer")?
@@ -112,7 +112,7 @@ fn newer(a: &str, b: &str) -> bool {
 
 /// Where a downloaded update waits: beside the app, hidden.
 fn staging(app: &Path) -> Option<PathBuf> {
-    Some(app.parent()?.join(".hasteclip-update"))
+    Some(app.parent()?.join(".vibeclip-update"))
 }
 
 /// Download `release` beside `app`, check it, unzip it and check its
@@ -122,13 +122,13 @@ pub fn download(release: &Release, app: &Path, mut progress: impl FnMut(u8)) -> 
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging).context("can't write next to the app")?;
 
-    let expected = ureq::get(&release.checksum).header("User-Agent", "HasteClip-updater").call()?.body_mut().read_to_string()?;
+    let expected = ureq::get(&release.checksum).header("User-Agent", "VibeClip-updater").call()?.body_mut().read_to_string()?;
     let expected = expected.split_whitespace().next().unwrap_or_default().to_ascii_lowercase();
     if expected.len() != 64 {
         bail!("the release's checksum file is malformed");
     }
 
-    let mut response = ureq::get(&release.zip).header("User-Agent", "HasteClip-updater").call()?;
+    let mut response = ureq::get(&release.zip).header("User-Agent", "VibeClip-updater").call()?;
     let total = response.headers().get("content-length").and_then(|v| v.to_str().ok()?.parse::<u64>().ok());
     let mut body = response.body_mut().with_config().limit(1 << 30).reader();
     let zip = staging.join(ZIP);
@@ -165,12 +165,12 @@ pub fn download(release: &Release, app: &Path, mut progress: impl FnMut(u8)) -> 
     if !status.success() {
         bail!("couldn't unzip the update");
     }
-    let unzipped = partial.join("HasteClip.app");
+    let unzipped = partial.join("Vibe Clip.app");
     if !signed_by_us(&unzipped) {
         let _ = std::fs::remove_dir_all(&staging);
-        bail!("the update isn't signed by HasteClip, so it wasn't installed");
+        bail!("the update isn't signed by Vibe Clip, so it wasn't installed");
     }
-    let ready = staging.join("HasteClip.app");
+    let ready = staging.join("Vibe Clip.app");
     std::fs::rename(&unzipped, &ready)?;
     let _ = std::fs::remove_dir(&partial);
     Ok(ready)
@@ -179,7 +179,7 @@ pub fn download(release: &Release, app: &Path, mut progress: impl FnMut(u8)) -> 
 /// An update downloaded earlier and still waiting (the app didn't quit
 /// normally since), with its version.
 pub fn pending(app: &Path) -> Option<(PathBuf, String)> {
-    let ready = staging(app)?.join("HasteClip.app");
+    let ready = staging(app)?.join("Vibe Clip.app");
     let version = bundle_version(&ready)?;
     (newer(&version, env!("CARGO_PKG_VERSION")) && signed_by_us(&ready)).then_some((ready, version))
 }
@@ -212,10 +212,10 @@ pub fn apply_pending_at_launch() -> bool {
 pub fn apply(ready: &Path, app: &Path, restart: bool) -> Result<()> {
     // Checked again: it waited on disk since it was downloaded.
     if !signed_by_us(ready) {
-        bail!("the update isn't signed by HasteClip");
+        bail!("the update isn't signed by Vibe Clip");
     }
     let staging = ready.parent().context("the update has no folder")?;
-    let old = staging.join("HasteClip-old.app");
+    let old = staging.join("VibeClip-old.app");
     let _ = std::fs::remove_dir_all(&old);
     std::fs::rename(app, &old).context("couldn't move the old version aside")?;
     if let Err(e) = std::fs::rename(ready, app) {
@@ -253,20 +253,20 @@ mod tests {
     #[test]
     fn only_our_signature_is_taken() {
         let dir = std::env::temp_dir().join(format!("hc-mac-update-{}", std::process::id()));
-        let app = dir.join("HasteClip.app");
+        let app = dir.join("Vibe Clip.app");
         std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
-        std::fs::copy("/bin/echo", app.join("Contents/MacOS/hasteclip")).unwrap();
-        std::fs::write(app.join("Contents/Info.plist"), r#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.kaillr.HasteClip</string><key>CFBundleExecutable</key><string>hasteclip</string><key>CFBundleShortVersionString</key><string>99.0.0</string></dict></plist>"#).unwrap();
+        std::fs::copy("/bin/echo", app.join("Contents/MacOS/vibe-clip")).unwrap();
+        std::fs::write(app.join("Contents/Info.plist"), r#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.phsrp.VibeClip</string><key>CFBundleExecutable</key><string>vibe-clip</string><key>CFBundleShortVersionString</key><string>99.0.0</string></dict></plist>"#).unwrap();
         // Ad hoc, with our identifier: still not ours.
         assert!(Command::new("codesign").args(["--force", "--sign", "-"]).arg(&app).status().unwrap().success());
         assert!(!signed_by_us(&app));
         // Waiting as an update, it isn't taken for one.
-        let staged = dir.join("Apps").join(".hasteclip-update").join("HasteClip.app");
+        let staged = dir.join("Apps").join(".vibeclip-update").join("Vibe Clip.app");
         std::fs::create_dir_all(staged.parent().unwrap()).unwrap();
         std::fs::rename(&app, &staged).unwrap();
         assert_eq!(bundle_version(&staged).as_deref(), Some("99.0.0"));
-        assert!(pending(&dir.join("Apps").join("HasteClip.app")).is_none());
-        let installed = dir.join("Apps").join("HasteClip.app");
+        assert!(pending(&dir.join("Apps").join("Vibe Clip.app")).is_none());
+        let installed = dir.join("Apps").join("Vibe Clip.app");
         std::fs::create_dir_all(&installed).unwrap();
         assert!(apply(&staged, &installed, false).is_err());
         assert!(installed.exists(), "the installed app stays");

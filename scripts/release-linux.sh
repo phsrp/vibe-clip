@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Builds the Linux release into Releases/: HasteClip-linux-x64.tar.gz, the app
+# Builds the Linux release into Releases/: VibeClip-linux-x64.tar.gz, the app
 # with its desktop entry and icon, and its checksum (.sha256, for the app's
-# updater). Unpack it anywhere and run ./hasteclip; on
+# updater). Unpack it anywhere and run ./vibe-clip; on
 # first launch it adds itself to the desktop's apps (linux_desktop.rs).
 # ffmpeg is included, so there's nothing else to install.
 #
@@ -28,7 +28,7 @@ ffmpeg_build="ffmpeg-n8.1.3-27-g8dca1586f4-linux64-gpl-shared-8.1"
 ffmpeg_url="https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-30-13-01/$ffmpeg_build.tar.xz"
 ffmpeg_sha256="bf4a4655c74faca6c6890ee68d2d61af54b1145efdb46d617cb26046f73eabf5"
 
-name="HasteClip-linux-x64"
+name="VibeClip-linux-x64"
 work="target/release-package"
 stage="$work/$name"
 out="Releases"
@@ -64,12 +64,12 @@ if [ "${nvenc_driver%%.*}" -gt 580 ]; then
 fi
 
 sed -i.bak -E "s/^version = \"[^\"]*\"/version = \"$version\"/" Cargo.toml && rm Cargo.toml.bak
-HASTECLIP_FFMPEG_INCLUDE="$root/$work/$ffmpeg_build/include" cargo build --release -p hasteclip
+VIBECLIP_FFMPEG_INCLUDE="$root/$work/$ffmpeg_build/include" cargo build --release -p vibe-clip
 restore
 trap - EXIT
 
-cp target/release/hasteclip "$stage/"
-strip "$stage/hasteclip"
+cp target/release/vibe-clip "$stage/"
+strip "$stage/vibe-clip"
 
 cp "$work/$ffmpeg_build/bin/ffmpeg" "$work/$ffmpeg_build/bin/ffprobe" "$stage/"
 mkdir -p "$stage/lib"
@@ -79,12 +79,12 @@ cp "$work/$ffmpeg_build/LICENSE.txt" "$stage/ffmpeg-LICENSE.txt"
 "$stage/ffmpeg" -hide_banner -version >/dev/null
 "$stage/ffprobe" -hide_banner -version >/dev/null
 
-cp crates/app/assets/io.github.kaillr.HasteClip.desktop "$stage/"
-cp crates/app/assets/glyph-icon/256.png "$stage/io.github.kaillr.HasteClip.png"
+cp crates/app/assets/io.github.phsrp.VibeClip.desktop "$stage/"
+cp crates/app/assets/glyph-icon/256.png "$stage/io.github.phsrp.VibeClip.png"
 cat > "$stage/README.txt" <<EOF
-HasteClip $version for Linux (x86-64)
+Vibe Clip $version for Linux (x86-64)
 
-Run ./hasteclip. The first time, it adds itself to your desktop's apps, so
+Run ./vibe-clip. The first time, it adds itself to your desktop's apps, so
 after that you can start it from there (move this folder first if you want it
 somewhere else, then run it once from its new place). It keeps itself up to
 date, as long as this folder is yours to write to (in your home folder, not
@@ -94,9 +94,9 @@ Needs a recent Linux (glibc 2.39+: Ubuntu 24.04, Fedora 40, Debian 13, Arch,
 CachyOS or newer) with PipeWire, as desktops have them. ffmpeg is included
 (ffmpeg, ffprobe and lib/, GPL: see ffmpeg-LICENSE.txt). If it doesn't start,
 run it from a terminal: it says what's missing. Its log is in
-~/.local/share/hasteclip/logs.
+~/.local/share/vibe-clip/logs.
 
-https://github.com/hasteclip/hasteclip
+https://github.com/phsrp/vibe-clip
 EOF
 
 tar -C "$work" -czf "$out/$name.tar.gz" "$name"

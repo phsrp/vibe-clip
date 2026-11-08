@@ -998,7 +998,7 @@ impl GameTitles {
     }
 }
 
-/// Persisted to `<config_dir>/hasteclip/settings.json`. `#[serde(default)]` lets
+/// Persisted to `<config_dir>/vibe-clip/settings.json`. `#[serde(default)]` lets
 /// older files load after new fields are added.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -1096,7 +1096,7 @@ pub struct RecordSettings {
     pub game_folders: std::collections::BTreeMap<String, String>,
     /// Light, dark, or the system's.
     pub theme: Theme,
-    /// Closing the window keeps HasteClip running in the tray (where
+    /// Closing the window keeps Vibe Clip running in the tray (where
     /// there is one) instead of quitting.
     pub close_to_tray: bool,
     /// The first close asked which (then it just does it).
@@ -1185,7 +1185,7 @@ impl Default for RecordSettings {
             record_sessions: false,
             auto_update: true,
             // On to begin with: friends see what you clip, and where to get
-            // HasteClip. Settings saved before keep theirs (off).
+            // Vibe Clip. Settings saved before keep theirs (off).
             discord_presence: true,
             stream: StreamCfg::default(),
             encoder: Encoder::Auto,
@@ -1229,7 +1229,7 @@ pub struct SaveSound {
     pub sound: String,
     /// 0..=1, applied on a curve (see `sound::gain`).
     pub volume: f32,
-    /// Sounds you've added, copied into HasteClip' own folder.
+    /// Sounds you've added, copied into Vibe Clip' own folder.
     pub custom: Vec<CustomSound>,
     /// Recorded like any other app's sound (in what's recorded after it).
     pub recorded: bool,
@@ -1237,7 +1237,7 @@ pub struct SaveSound {
 
 impl Default for SaveSound {
     fn default() -> Self {
-        Self { enabled: true, sound: "horse".into(), volume: 0.5, custom: Vec::new(), recorded: true }
+        Self { enabled: true, sound: "blip".into(), volume: 0.5, custom: Vec::new(), recorded: true }
     }
 }
 
@@ -1420,24 +1420,24 @@ pub fn fps_choices(hz: Option<u32>) -> Vec<u32> {
 /// encoder takes 1080p at up to ~540 fps (2 ms a frame, one at a time).
 pub const MAX_FPS: u32 = 600;
 
-/// `~/Movies/hasteclip` on macOS, the platform video dir elsewhere, falling back
+/// `~/Movies/vibe-clip` on macOS, the platform video dir elsewhere, falling back
 /// to the current dir if none is known.
 pub fn default_output_dir() -> PathBuf {
     dirs::video_dir()
         .or_else(dirs::home_dir)
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("hasteclip")
+        .join("vibe-clip")
 }
 
 fn settings_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("hasteclip").join("settings.json"))
+    dirs::config_dir().map(|d| d.join("vibe-clip").join("settings.json"))
 }
 
-/// Dev aid: `HASTECLIP_SETTINGS=<file>` loads the settings from that file
+/// Dev aid: `VIBECLIP_SETTINGS=<file>` loads the settings from that file
 /// instead (to check a setup without touching the real one; dev-hook
 /// launches never save).
 fn load_path() -> Option<PathBuf> {
-    std::env::var_os("HASTECLIP_SETTINGS").map(PathBuf::from).or_else(settings_path)
+    std::env::var_os("VIBECLIP_SETTINGS").map(PathBuf::from).or_else(settings_path)
 }
 
 impl RecordSettings {

@@ -5,8 +5,8 @@
 #    version is, without releasing anything. No release-worthy commits → the
 #    rest is skipped.
 # 2. windows, linux, mac: build that version for the platforms ticked when
-#    running it (installer and update packages, HasteClip-linux-x64.tar.gz,
-#    HasteClip-mac-arm64.dmg and the .zip it updates from), all at once.
+#    running it (installer and update packages, VibeClip-linux-x64.tar.gz,
+#    VibeClip-mac-arm64.dmg and the .zip it updates from), all at once.
 # 3. publish: only once every ticked build is done, semantic-release tags
 #    vX.Y.Z and publishes the GitHub release with everything on it, which the
 #    installed apps update from. A failed build means no release, never half
@@ -136,7 +136,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: Releases/HasteClip-linux-x64.tar.gz*
+          path: Releases/VibeClip-linux-x64.tar.gz*
           if-no-files-found: error
 
   mac:
@@ -169,9 +169,9 @@ jobs:
           # The disk image people install from, and the zipped app the
           # installed app updates itself from.
           path: |
-            Releases/HasteClip-mac-arm64.dmg
-            Releases/HasteClip-mac-arm64.zip
-            Releases/HasteClip-mac-arm64.zip.sha256
+            Releases/VibeClip-mac-arm64.dmg
+            Releases/VibeClip-mac-arm64.zip
+            Releases/VibeClip-mac-arm64.zip.sha256
           if-no-files-found: error
 
   publish:

@@ -920,9 +920,9 @@ pub(super) enum VideoEncoder {
 
 impl VideoEncoder {
     fn start(width: u32, height: u32, s: &EncodeSettings, out: Sender<writer::Command>, picture: Option<&gpu_frame::GpuPicture>) -> Result<Self> {
-        // HASTECLIP_ENCODER=nvenc, vulkan or ffmpeg: only that one (or
+        // VIBECLIP_ENCODER=nvenc, vulkan or ffmpeg: only that one (or
         // ffmpeg's), even where another would start, to compare.
-        let only = std::env::var("HASTECLIP_ENCODER").ok();
+        let only = std::env::var("VIBECLIP_ENCODER").ok();
         let wanted = |name: &str| only.as_deref().is_none_or(|o| o == name);
         if s.use_hardware && wanted("nvenc") {
             match nvenc::Nvenc::start(width, height, s.fps, s.video_bitrate_kbps, out.clone(), picture.map(|p| p as &dyn gpu_frame::Nv12Source), false) {
@@ -1397,7 +1397,7 @@ mod tests {
     }
 
     /// Recording the main screen at 1080p60 for 5 seconds: a file with every
-    /// frame, the CPU it took (HASTECLIP_NO_GPU_CAPTURE=1 for the CPU's way),
+    /// frame, the CPU it took (VIBECLIP_NO_GPU_CAPTURE=1 for the CPU's way),
     /// and a screenshot meanwhile.
     #[test]
     #[ignore = "records the screen: cargo test -p capture records_the_screen -- --ignored"]
@@ -1410,17 +1410,17 @@ mod tests {
             output_dir: dir.clone(),
             container_ext: "mp4".into(),
             fps: 60,
-            // HASTECLIP_BLEND=<looks a frame>, HASTECLIP_SOFT=1 for the soft shape.
-            blend_samples: std::env::var("HASTECLIP_BLEND").ok().and_then(|s| s.parse().ok()).unwrap_or(1),
-            blend_shape: if std::env::var_os("HASTECLIP_SOFT").is_some() { crate::BlendShape::Soft } else { crate::BlendShape::Even },
+            // VIBECLIP_BLEND=<looks a frame>, VIBECLIP_SOFT=1 for the soft shape.
+            blend_samples: std::env::var("VIBECLIP_BLEND").ok().and_then(|s| s.parse().ok()).unwrap_or(1),
+            blend_shape: if std::env::var_os("VIBECLIP_SOFT").is_some() { crate::BlendShape::Soft } else { crate::BlendShape::Even },
             video_bitrate_kbps: 8000,
             size: crate::VideoSize { short_side: Some(1080), ..Default::default() },
             use_hardware: true,
             replay_seconds: 5,
             video: video.clone(),
             away_screen: None,
-            // HASTECLIP_WEBCAM=<device> draws a webcam in the corner.
-            webcam: std::env::var("HASTECLIP_WEBCAM").ok().map(|device| crate::webcam::Webcam {
+            // VIBECLIP_WEBCAM=<device> draws a webcam in the corner.
+            webcam: std::env::var("VIBECLIP_WEBCAM").ok().map(|device| crate::webcam::Webcam {
                 device,
                 format: None,
                 placement: Arc::new(Mutex::new(crate::webcam::Placement::default_for(16.0 / 9.0, 16.0 / 9.0))),
@@ -1451,7 +1451,7 @@ mod tests {
             .unwrap();
         eprintln!("refresh: {:?} Hz (fastest {:?})", display_refresh(Some(&screen.id)), display_refresh(None));
         eprintln!("gpu: {}, {:.0}% of a core, screenshot {}x{}, file: {}", screen::gpu_frames().is_some(), used * 100.0, shot.width, shot.height, String::from_utf8_lossy(&probe.stdout).replace('\n', " "));
-        if let Some(out) = std::env::var_os("HASTECLIP_FRAME") {
+        if let Some(out) = std::env::var_os("VIBECLIP_FRAME") {
             let _ = std::process::Command::new("ffmpeg").args(["-v", "error", "-y", "-sseof", "-1", "-i"]).arg(&file).args(["-frames:v", "1"]).arg(out).status();
         }
         assert!(shot.bgra.chunks_exact(4).any(|p| p[0] > 16 || p[1] > 16 || p[2] > 16), "black screenshot");
@@ -1472,9 +1472,9 @@ mod tests {
     }
 
     /// An X11 window (XWayland's, as a Proton game's) is followed and read
-    /// through XComposite: HASTECLIP_APPS_X11=1 on KDE.
+    /// through XComposite: VIBECLIP_APPS_X11=1 on KDE.
     #[test]
-    #[ignore = "opens an X11 window and captures it: HASTECLIP_APPS_X11=1 cargo test -p capture records_an_x11_window -- --ignored"]
+    #[ignore = "opens an X11 window and captures it: VIBECLIP_APPS_X11=1 cargo test -p capture records_an_x11_window -- --ignored"]
     fn records_an_x11_window() {
         let mut cube = std::process::Command::new("vkcube").args(["--wsi", "xcb"]).spawn().expect("vkcube");
         thread::sleep(Duration::from_millis(1500));
@@ -1496,7 +1496,7 @@ mod tests {
         let (_, seq2) = feed.get().unwrap();
         let lit = frame.data.chunks_exact(4).filter(|p| p[0] > 16 || p[1] > 16 || p[2] > 16).count();
         eprintln!("app {app:?}: {}x{}, {lit} lit pixels, pictures {seq:#x} → {seq2:#x}", frame.width, frame.height);
-        if let Some(out) = std::env::var_os("HASTECLIP_SHOT") {
+        if let Some(out) = std::env::var_os("VIBECLIP_SHOT") {
             let (w, h) = (frame.width, frame.height);
             let rgb: Vec<u8> = frame.data.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0]]).collect();
             std::fs::write(out, [format!("P6\n{w} {h}\n255\n").as_bytes(), &rgb].concat()).unwrap();
@@ -1529,7 +1529,7 @@ mod tests {
         let (_, seq2) = feed.get().unwrap();
         let lit = frame.data.chunks_exact(4).filter(|p| p[0] > 16 || p[1] > 16 || p[2] > 16).count();
         eprintln!("app {app:?}: {}x{}, {lit} lit pixels, pictures {seq:#x} → {seq2:#x}", frame.width, frame.height);
-        if let Some(out) = std::env::var_os("HASTECLIP_SHOT") {
+        if let Some(out) = std::env::var_os("VIBECLIP_SHOT") {
             let (w, h) = (frame.width, frame.height);
             let rgb: Vec<u8> = frame.data.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0]]).collect();
             std::fs::write(out, [format!("P6\n{w} {h}\n255\n").as_bytes(), &rgb].concat()).unwrap();
@@ -1552,7 +1552,7 @@ mod tests {
         assert_eq!(img.bgra.len(), (img.width * img.height * 4) as usize);
         assert!(img.bgra.chunks_exact(4).all(|p| p[3] == 255));
         assert!(img.bgra.chunks_exact(4).any(|p| p[0] > 16 || p[1] > 16 || p[2] > 16), "all black");
-        if let Some(out) = std::env::var_os("HASTECLIP_SHOT") {
+        if let Some(out) = std::env::var_os("VIBECLIP_SHOT") {
             let (w, h) = (img.width, img.height);
             let rgb: Vec<u8> = img.bgra.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0]]).collect();
             let header = format!("P6\n{w} {h}\n255\n");

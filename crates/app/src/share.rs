@@ -1,4 +1,4 @@
-//! Getting a clip out of HasteClip and into wherever it's going.
+//! Getting a clip out of Vibe Clip and into wherever it's going.
 //!
 //! - **Drag**: drag a card out of the window onto Discord, a chat, a browser
 //!   upload box, the desktop, an editor — a real OS file drag, so every app that

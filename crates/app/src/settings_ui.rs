@@ -112,7 +112,7 @@ impl Filter {
 /// it's on this system at all).
 fn group_matches(name: &str, f: &Filter) -> bool {
     match name {
-        "Clipping" => f.shows(&["clip length", "replay buffer duration", "start clipping when hasteclip opens", "auto start", "memory"]),
+        "Clipping" => f.shows(&["clip length", "replay buffer duration", "start clipping when vibe-clip opens", "auto start", "memory"]),
         "Video" => f.shows(RESOLUTION_WORDS) || f.shows(SHAPE_WORDS),
         "Motion" => f.shows(FPS_WORDS) || capture::frame_blending() && f.shows(BLEND_WORDS),
         "File" => f.shows(QUALITY_WORDS) || f.shows(ENCODER_WORDS) || f.shows(FORMAT_WORDS),
@@ -364,8 +364,8 @@ impl App {
                     self.length_field(ui);
                 });
             }
-            if f.shows(&["start clipping when hasteclip opens", "auto start"]) {
-                l.row(Row::new("Start clipping when HasteClip opens"), |ui| ui_kit::switch(ui, &mut self.settings.auto_start_buffer));
+            if f.shows(&["start clipping when vibe-clip opens", "auto start"]) {
+                l.row(Row::new("Start clipping when Vibe Clip opens"), |ui| ui_kit::switch(ui, &mut self.settings.auto_start_buffer));
             }
         });
     }
@@ -852,7 +852,7 @@ impl App {
         });
     }
 
-    /// macOS: what HasteClip needs macOS to allow, whether it's allowed,
+    /// macOS: what Vibe Clip needs macOS to allow, whether it's allowed,
     /// and a way to allow what isn't. Nothing here nags: a permission left
     /// off only shows as off when someone looks.
     #[cfg(target_os = "macos")]
@@ -931,7 +931,7 @@ impl App {
                     (true, true) if self.presence.connected() => "Showing on Discord",
                     (true, true) => "Discord isn't running",
                 };
-                let tip = "While HasteClip clips a game, your Discord profile shows “Clipping osu! with HasteClip”, with a button for others to get HasteClip. Needs Discord running.";
+                let tip = "While Vibe Clip clips a game, your Discord profile shows “Clipping osu! with Vibe Clip”, with a button for others to get Vibe Clip. Needs Discord running.";
                 l.row(Row::new("Discord activity").tip("Discord activity", tip).note(note), |ui| ui_kit::switch(ui, &mut self.settings.discord_presence));
             }
         });
@@ -948,13 +948,13 @@ impl App {
             Status::Checking => "Checking for updates…".to_owned(),
             Status::Downloading(p) => format!("Downloading an update… {p}%"),
             Status::UpToDate => "You have the latest version.".to_owned(),
-            Status::Ready(v) => format!("Version {v} is ready and installs when you quit HasteClip."),
+            Status::Ready(v) => format!("Version {v} is ready and installs when you quit Vibe Clip."),
             Status::Failed(e) => e.clone(),
         };
         let idle = self.rec_state.idle();
         ui_kit::list(ui, "about", |l| {
             if f.shows(&["update", "version", "what's new"]) {
-                let title = format!("HasteClip {}", self.updater.version());
+                let title = format!("Vibe Clip {}", self.updater.version());
                 l.row(Row::new(&title).note(line.clone()), |ui| {
                     if Btn::ghost("What's new").small().show(ui).clicked() {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(format!("{}/releases", crate::update::REPO)));
@@ -982,8 +982,13 @@ impl App {
                 l.row(Row::new("Update automatically"), |ui| ui_kit::switch(ui, &mut self.settings.auto_update));
             }
             // The copyright notice the GPL asks copies to keep showing.
-            if f.shows(&["license", "licence", "about", "source code", "copyright", "open source"]) {
-                l.row(Row::new("License").note("© Kaillr. Free software under the GNU GPL, version 3 or later."), |ui| {
+            if f.shows(&["license", "licence", "about", "source code", "copyright", "open source", "hasteclip", "credits", "based on"]) {
+                l.row(Row::new("Based on HasteClip").note("Vibe Clip is a modified version of HasteClip by Kaillr. It isn't made or endorsed by HasteClip."), |ui| {
+                    if Btn::ghost("HasteClip").small().show(ui).clicked() {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab("https://github.com/hasteclip/hasteclip"));
+                    }
+                });
+                l.row(Row::new("License").note("© Kaillr, and phsrp for Vibe Clip's changes. Free software under the GNU GPL, version 3 or later."), |ui| {
                     if Btn::ghost("Source code").small().show(ui).clicked() {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(crate::update::REPO));
                     }
@@ -1359,7 +1364,7 @@ impl App {
                 ui.set_width(width);
                 let p = theme::pal(ui);
                 let t = self.settings.game_titles.clone();
-                ui.add(egui::Label::new(theme::text("Clips get named after what happened in the game, for games that tell HasteClip. Clips where nothing happened keep their time.", 13.5, W::Regular).color(p.text2)).wrap());
+                ui.add(egui::Label::new(theme::text("Clips get named after what happened in the game, for games that tell Vibe Clip. Clips where nothing happened keep their time.", 13.5, W::Regular).color(p.text2)).wrap());
                 ui.add_space(18.0);
                 ui.label(theme::text("Your clips will be called", 13.0, W::Semibold).color(p.text2));
                 ui.add_space(6.0);
@@ -1674,7 +1679,7 @@ fn screen_capture_note(choice: settings::ScreenCapture, apps: bool, in_use: Opti
         Auto => "Uses Windows Graphics Capture here",
         Duplication => "No yellow border. Can't record a display on another graphics card",
         Wgc if auto_duplicates => "Windows 10 shows a yellow border around your screen with it",
-        Wgc => "What HasteClip has always used",
+        Wgc => "What Vibe Clip has always used",
     };
     (note.into(), false)
 }
@@ -1895,7 +1900,7 @@ mod search_tests {
     }
 
     /// Every group is on one pane, and the search finds what moved in with
-    /// another group's: Discord activity on App, saving by voice on Clipping.
+    /// another group's: Discord activity on App.
     #[test]
     fn panes_hold_every_group_once() {
         let groups: Vec<&str> = Pane::ALL.iter().flat_map(|p| p.groups().iter().copied()).collect();
@@ -1908,7 +1913,6 @@ mod search_tests {
             Pane::ALL.into_iter().filter(|p| p.groups().iter().any(|g| group_matches(g, &f))).map(Pane::label).collect()
         };
         assert_eq!(on("discord"), ["App"]);
-        assert_eq!(on("hasteclip that"), ["Clipping"]);
         assert_eq!(on("license"), ["App"]);
         assert_eq!(on("fps"), ["Video"]);
     }

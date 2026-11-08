@@ -1,4 +1,4 @@
-//! The tray icon (Windows, Linux) / menu bar icon (macOS): HasteClip keeps
+//! The tray icon (Windows, Linux) / menu bar icon (macOS): Vibe Clip keeps
 //! running there when its window is closed, so the replay buffer and
 //! shortcuts keep working. Its menu: open the window, save a clip, start or
 //! stop the replay buffer, quit. Clicking the icon opens the window.
@@ -101,17 +101,17 @@ impl Tray {
             use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
             use tray_icon::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-            let open = MenuItem::new("Open HasteClip", true, None);
+            let open = MenuItem::new("Open Vibe Clip", true, None);
             let save = MenuItem::new("Save clip", false, None);
             let buffer = MenuItem::new("Start clipping", true, None);
-            let quit = MenuItem::new("Quit HasteClip", true, None);
+            let quit = MenuItem::new("Quit Vibe Clip", true, None);
             let menu = Menu::new();
             menu.append_items(&[&open, &PredefinedMenuItem::separator(), &save, &buffer, &PredefinedMenuItem::separator(), &quit]).ok()?;
             let image = tray_image()?;
             // macOS: a template image, tinted by macOS to suit the menu bar
             // (white on a dark one, black on a light one), as its own icons.
             let built = TrayIconBuilder::new()
-                .with_tooltip("HasteClip")
+                .with_tooltip("Vibe Clip")
                 .with_icon(image)
                 .with_icon_as_template(cfg!(target_os = "macos"))
                 .with_menu(Box::new(menu))
@@ -239,13 +239,13 @@ mod linux {
             crate::portal_shortcuts::APP_ID.into()
         }
         fn title(&self) -> String {
-            "HasteClip".into()
+            "Vibe Clip".into()
         }
         fn icon_pixmap(&self) -> Vec<ksni::Icon> {
             self.icon.clone()
         }
         fn tool_tip(&self) -> ksni::ToolTip {
-            ksni::ToolTip { title: "HasteClip".into(), ..Default::default() }
+            ksni::ToolTip { title: "Vibe Clip".into(), ..Default::default() }
         }
         /// A left click opens the window.
         fn activate(&mut self, _x: i32, _y: i32) {
@@ -257,12 +257,12 @@ mod linux {
                 StandardItem { label: label.into(), enabled, activate: Box::new(move |this: &mut Self| this.send(cmd)), ..Default::default() }.into()
             };
             vec![
-                item("Open HasteClip", true, Cmd::Open),
+                item("Open Vibe Clip", true, Cmd::Open),
                 ksni::MenuItem::Separator,
                 item("Save clip", self.buffering, Cmd::SaveClip),
                 item(if self.buffering { "Stop clipping" } else { "Start clipping" }, true, Cmd::ToggleBuffer),
                 ksni::MenuItem::Separator,
-                item("Quit HasteClip", true, Cmd::Quit),
+                item("Quit Vibe Clip", true, Cmd::Quit),
             ]
         }
         /// The desktop stopped showing tray icons (its panel restarted, say):
@@ -311,7 +311,7 @@ mod linux {
     }
 }
 
-/// One HasteClip at a time: opening it again (a shortcut, a second click)
+/// One Vibe Clip at a time: opening it again (a shortcut, a second click)
 /// shows the one already running, in the tray maybe. The first listens on a
 /// local port; a later one tells it to show itself and exits. A build of
 /// your own takes over instead (see [`take_over`]).
@@ -335,7 +335,7 @@ fn claim_on(port: u16) -> Option<Option<std::net::TcpListener>> {
             Ok(running) if from_build_folder() => take_over(running, port),
             Ok(mut running) => {
                 let _ = running.write_all(b"show");
-                eprintln!("HasteClip is already running: showed that one instead");
+                eprintln!("Vibe Clip is already running: showed that one instead");
                 None
             }
             // Something else has the port: run anyway, alone.
@@ -345,12 +345,12 @@ fn claim_on(port: u16) -> Option<Option<std::net::TcpListener>> {
 }
 
 /// Run from Cargo's build folder (`cargo run`, with `--release` or not): a
-/// build of your own, not an installed HasteClip.
+/// build of your own, not an installed Vibe Clip.
 fn from_build_folder() -> bool {
     std::env::current_exe().is_ok_and(|exe| exe.ancestors().skip(1).take(3).any(|dir| dir.join("CACHEDIR.TAG").is_file()))
 }
 
-/// A build of your own, started while another HasteClip runs (the installed
+/// A build of your own, started while another Vibe Clip runs (the installed
 /// one, in the tray): that one is asked to quit (finishing a recording
 /// first, as when it's quit from the tray), and this one runs once it has.
 /// It used to be shown instead, as for a second launch of the same app,
@@ -369,12 +369,12 @@ fn take_over(mut running: std::net::TcpStream, port: u16) -> Option<Option<std::
         while Instant::now() < until {
             std::thread::sleep(Duration::from_millis(100));
             if let Ok(listener) = std::net::TcpListener::bind(("127.0.0.1", port)) {
-                crate::logfile::tell("HasteClip was already running: it quit, so this one runs");
+                crate::logfile::tell("Vibe Clip was already running: it quit, so this one runs");
                 return Some(Some(listener));
             }
         }
     }
-    crate::logfile::tell("HasteClip is already running, and this build of your own can't start beside it. Quit HasteClip from the tray, then run this again.");
+    crate::logfile::tell("Vibe Clip is already running, and this build of your own can't start beside it. Quit Vibe Clip from the tray, then run this again.");
     None
 }
 
@@ -423,7 +423,7 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
     use std::time::{Duration, Instant};
 
-    /// A port of the test's own, for a HasteClip "already running" on it.
+    /// A port of the test's own, for a Vibe Clip "already running" on it.
     fn spare_port() -> u16 {
         TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port()
     }

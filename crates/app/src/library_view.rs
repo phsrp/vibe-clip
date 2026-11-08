@@ -1004,7 +1004,7 @@ impl App {
                 Some(LinkState::Uploading(f)) => (Some((format!("{} {}%", icon::CLOUD_ARROW_UP, pct(f)), "Uploading for a link")), Some(f)),
                 Some(LinkState::Updating(f)) => (Some((format!("{} {}%", icon::CLOUD_ARROW_UP, pct(f)), "Updating its link to this version")), Some(f)),
                 Some(LinkState::Behind) => (
-                    Some((format!("{} Shared", icon::ARROWS_CLOCKWISE), "Shared with a link, which still shows an older version of it: it's brought up to date once HasteClip's server can be reached")),
+                    Some((format!("{} Shared", icon::ARROWS_CLOCKWISE), "Shared with a link, which still shows an older version of it: it's brought up to date once Vibe Clip's server can be reached")),
                     None,
                 ),
                 Some(LinkState::Shared) => (Some((format!("{} Shared", icon::LINK), "Shared with a link: click for it, and who's watched it")), None),
@@ -1163,7 +1163,7 @@ impl App {
                 });
             }
             if !paths.iter().any(|p| clips::is_image(p))
-                && Item::new(format!("Export {n} clips…")).icon(icon::PACKAGE).tip("To a file with their originals, markers and collections, to import into HasteClip on another computer").show(ui).clicked()
+                && Item::new(format!("Export {n} clips…")).icon(icon::PACKAGE).tip("To a file with their originals, markers and collections, to import into Vibe Clip on another computer").show(ui).clicked()
             {
                 action = Some(Action::Export(paths.clone()));
             }
@@ -1257,7 +1257,7 @@ impl App {
             }
         }
         ui_kit::menu_sep(ui);
-        if Item::new("Import clips…").icon(icon::DOWNLOAD_SIMPLE).tip("Clips exported from HasteClip on another computer (.hasteclip files). Or drop the files on the window").show(ui).clicked() {
+        if Item::new("Import clips…").icon(icon::DOWNLOAD_SIMPLE).tip("Clips exported from Vibe Clip on another computer (.vibeclip files). Or drop the files on the window").show(ui).clicked() {
             action = Some(Action::Import);
         }
         if Item::new(format!("Show clips folder in {}", crate::file_manager())).icon(icon::FOLDER_OPEN).show(ui).clicked()
@@ -1637,17 +1637,8 @@ pub(crate) fn share_items(ui: &mut egui::Ui, anchor: Pos2, linked: bool, image: 
         }
         return choice;
     }
-    if linked {
-        if Item::new("Copy link").icon(icon::LINK).tip("Its link plays it in any browser and right in Discord").show(ui).clicked() {
-            choice = Some(ShareChoice::CopyLink);
-        }
-        if Item::new("Shared link…").icon(icon::GLOBE).tip("Its link, how many have watched it, and Stop sharing").show(ui).clicked() {
-            choice = Some(ShareChoice::Link);
-        }
-    } else if Item::new("Share with a link…").icon(icon::LINK).tip("Uploads it to HasteClip for a link that plays it in any browser and right in Discord").show(ui).clicked() {
-        choice = Some(ShareChoice::Link);
-    }
-    ui_kit::menu_sep(ui);
+    // Vibe Clip has no link sharing: that's Vibe Clip's own server.
+    let _ = linked;
     if Item::new("Copy clip").icon(icon::COPY).keys(Some(crate::shortcuts::command("C"))).tip(format!("Then paste it into Discord, a chat or a folder ({})", crate::hotkey_label_cmd("V"))).show(ui).clicked() {
         choice = Some(ShareChoice::Copy);
     }
@@ -1660,7 +1651,7 @@ pub(crate) fn share_items(ui: &mut egui::Ui, anchor: Pos2, linked: bool, image: 
     }
     if Item::new("Export with its edit…")
         .icon(icon::PACKAGE)
-        .tip("A file with the clip, its original, markers and collections, to import into HasteClip on another computer")
+        .tip("A file with the clip, its original, markers and collections, to import into Vibe Clip on another computer")
         .show(ui)
         .clicked()
     {

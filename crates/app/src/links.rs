@@ -1,4 +1,4 @@
-//! Share links: a clip uploaded to HasteClip's server, with a link that plays
+//! Share links: a clip uploaded to Vibe Clip's server, with a link that plays
 //! it in any browser and right in chats (the server is
 //! <https://github.com/hasteclip/api>).
 //!
@@ -13,9 +13,9 @@
 //! same way.
 //!
 //! The server knows this app only by a random token it hands out the first
-//! time (kept in `<config_dir>/hasteclip/share.json`): there's no account.
+//! time (kept in `<config_dir>/vibe-clip/share.json`): there's no account.
 //!
-//! Shared clips are kept in the library's `.hasteclip/links.json`, by the
+//! Shared clips are kept in the library's `.vibeclip/links.json`, by the
 //! clip's path inside the library, like collections: renaming or moving a
 //! clip keeps its link. Stop sharing deletes the clip from the server.
 //!
@@ -41,10 +41,11 @@ use crate::App;
 use crate::theme::{self, W, icon};
 use crate::ui_kit::{self, Btn, Dismissed as _, Kind};
 
-/// The server. `HASTECLIP_API` points the app at another one (a local one
-/// while working on it).
+/// The server. Vibe Clip has none of its own (Vibe Clip's belongs to Vibe Clip),
+/// so share links are switched off: nothing in the app starts one, and without
+/// `VIBECLIP_API` (a server of your own) every request fails at once.
 fn api() -> String {
-    std::env::var("HASTECLIP_API").unwrap_or_else(|_| "https://api.hasteclip.com".into())
+    std::env::var("VIBECLIP_API").unwrap_or_default()
 }
 
 /// A shared clip.
@@ -258,9 +259,9 @@ impl Links {
     }
 }
 
-/// Links to another server (`HASTECLIP_API`) are kept apart, like its token.
+/// Links to another server (`VIBECLIP_API`) are kept apart, like its token.
 fn file_path(lib: &Path) -> PathBuf {
-    let name = if std::env::var_os("HASTECLIP_API").is_some() { "links-dev.json" } else { "links.json" };
+    let name = if std::env::var_os("VIBECLIP_API").is_some() { "links-dev.json" } else { "links.json" };
     lib.join(crate::store::DIR).join(name)
 }
 
@@ -488,7 +489,7 @@ pub fn status(link: &Link) -> Option<Status> {
 
 fn delete(server: &Server, id: &str) -> Result<(), String> {
     let Some(token) = server.saved_token() else {
-        return Err("it was shared from another install of HasteClip".into());
+        return Err("it was shared from another install of Vibe Clip".into());
     };
     let res = server.agent.delete(format!("{}/v1/clips/{id}", api())).header("Authorization", format!("Bearer {token}")).call();
     match res {
@@ -814,11 +815,11 @@ impl Server {
     }
 }
 
-/// Where the token is kept. Another server (`HASTECLIP_API`) gets a token
+/// Where the token is kept. Another server (`VIBECLIP_API`) gets a token
 /// file of its own, so trying one out never touches the real token.
 fn token_path() -> Option<PathBuf> {
-    let name = if std::env::var_os("HASTECLIP_API").is_some() { "share-dev.json" } else { "share.json" };
-    dirs::config_dir().map(|d| d.join("hasteclip").join(name))
+    let name = if std::env::var_os("VIBECLIP_API").is_some() { "share-dev.json" } else { "share.json" };
+    dirs::config_dir().map(|d| d.join("vibe-clip").join(name))
 }
 
 /// The server's own words for what went wrong (`{"error": "…"}`).
@@ -835,9 +836,9 @@ fn error_of(res: &mut ureq::http::Response<ureq::Body>) -> String {
 }
 
 /// The server can't be reached (no connection, or it's down).
-const OFFLINE: &str = "HasteClip's server can't be reached. Check your connection";
+const OFFLINE: &str = "Vibe Clip's server can't be reached. Check your connection";
 /// The server doesn't have the clip: unwatched for 90 days, or taken down.
-const NOT_THERE: &str = "it isn't on HasteClip's server anymore";
+const NOT_THERE: &str = "it isn't on Vibe Clip's server anymore";
 
 fn offline(e: ureq::Error) -> String {
     match e {
@@ -893,7 +894,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Result<Self, String> {
         static N: AtomicUsize = AtomicUsize::new(0);
-        let dir = std::env::temp_dir().join(format!("hasteclip-share-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let dir = std::env::temp_dir().join(format!("vibe-clip-share-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         Ok(Self(dir))
     }
@@ -1177,7 +1178,7 @@ impl App {
         }
         let mut behind = std::collections::HashSet::new();
         for (clip, link) in self.links.all() {
-            // Gone from here some other way (renamed outside HasteClip, say):
+            // Gone from here some other way (renamed outside Vibe Clip, say):
             // its link stays as it is. Being saved: once it's done.
             if !self.clips.iter().any(|c| c.path == clip) || self.renders.iter().any(|j| !j.as_new && j.source == clip) {
                 continue;
@@ -1390,7 +1391,7 @@ impl App {
                     ui_kit::dialog_text(ui, "Until it's all there, the link plays the version from before.");
                 } else if behind {
                     ui.add_space(8.0);
-                    ui_kit::dialog_text(ui, "The link still shows it as it was before. It's brought up to date by itself as soon as HasteClip's server can be reached.");
+                    ui_kit::dialog_text(ui, "The link still shows it as it was before. It's brought up to date by itself as soon as Vibe Clip's server can be reached.");
                 }
             } else if let Some((sent, total, making, f, left)) = uploading {
                 progress_bar(ui, f);
@@ -1409,7 +1410,7 @@ impl App {
                 if let Some(n) = &note {
                     ui_kit::dialog_text(ui, n);
                 }
-                ui_kit::dialog_text(ui, "Uploads the clip to HasteClip for a link that plays it in any browser, and right in chats. Anyone with the link can watch it, until you stop sharing.");
+                ui_kit::dialog_text(ui, "Uploads the clip to Vibe Clip for a link that plays it in any browser, and right in chats. Anyone with the link can watch it, until you stop sharing.");
                 if let Some(f) = &mut form {
                     upload_form(ui, f);
                 }
@@ -1433,7 +1434,7 @@ impl App {
                     if behind && ui.add(ui_kit::button("Try now", false).ghost()).clicked() {
                         pick = Some(Pick::TryNow);
                     }
-                    if Btn::new(Kind::DangerText, "Stop sharing").tip("Deletes it from HasteClip: the link stops working for everyone").show(ui).clicked() {
+                    if Btn::new(Kind::DangerText, "Stop sharing").tip("Deletes it from Vibe Clip: the link stops working for everyone").show(ui).clicked() {
                         pick = Some(Pick::Stop);
                     }
                 } else if uploading.is_some() {
@@ -1655,7 +1656,7 @@ mod tests {
     /// Over HTTPS to a real server: the lane's own connections carry TLS,
     /// and the bar follows what the server confirmed.
     #[test]
-    #[ignore = "uploads 3 MB to httpbin.org: cargo test -p hasteclip over_https -- --ignored --nocapture"]
+    #[ignore = "uploads 3 MB to httpbin.org: cargo test -p vibe-clip over_https -- --ignored --nocapture"]
     fn a_part_goes_up_over_https() {
         let progress = Progress::default();
         progress.total.store(3_000_000, Ordering::Relaxed);
@@ -1727,7 +1728,7 @@ mod tests {
     fn links_follow_their_clip_and_are_saved() {
         let lib = std::env::temp_dir().join(format!("hc-links-{}", std::process::id()));
         std::fs::create_dir_all(&lib).unwrap();
-        let link = Link { id: "aB3xY9k2Qp".into(), url: "https://clips.hasteclip.com/aB3xY9k2Qp".into(), shared: 1, named: None, version: None, output: None };
+        let link = Link { id: "aB3xY9k2Qp".into(), url: "https://clips.example.com/aB3xY9k2Qp".into(), shared: 1, named: None, version: None, output: None };
         let mut links = Links::load(&lib);
         links.set(&lib.join("Game").join("Ace.mp4"), link.clone());
         links.follow(&lib.join("Game").join("Ace.mp4"), &lib.join("Ace!.mp4"));
@@ -1811,7 +1812,7 @@ mod tests {
     /// picture it was planned at: the copy is made smaller until it fits,
     /// instead of going out over.
     #[test]
-    #[ignore = "encodes 10 s of 1080p60 noise a few times: cargo test -p hasteclip busy_copies_fit -- --ignored"]
+    #[ignore = "encodes 10 s of 1080p60 noise a few times: cargo test -p vibe-clip busy_copies_fit -- --ignored"]
     #[cfg(target_os = "macos")]
     fn busy_copies_fit() {
         let dir = std::env::temp_dir().join(format!("hc-busy-{}", std::process::id()));
@@ -1837,7 +1838,7 @@ mod tests {
     /// A clip too big to play in a chat goes as a copy that fits, still an
     /// H.264 MP4 a browser plays; a small one as it is.
     #[test]
-    #[ignore = "encodes ~100 MB of video: cargo test -p hasteclip copies_fit_chats -- --ignored"]
+    #[ignore = "encodes ~100 MB of video: cargo test -p vibe-clip copies_fit_chats -- --ignored"]
     fn copies_fit_chats() {
         let dir = std::env::temp_dir().join(format!("hc-fit-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1945,7 +1946,7 @@ mod tests {
         // Two sound tracks (the mix, then a source) and a tag, like a clip.
         let made = media::ffmpeg()
             .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=black:s=64x64:d=2", "-f", "lavfi", "-i", "sine=f=440:d=2", "-f", "lavfi", "-i", "sine=f=880:d=2"])
-            .args(["-map", "0", "-map", "1", "-map", "2", "-c:v", "libx264", "-c:a", "aac", "-metadata", "comment=hasteclip:id=secret", "-shortest"])
+            .args(["-map", "0", "-map", "1", "-map", "2", "-c:v", "libx264", "-c:a", "aac", "-metadata", "comment=vibe-clip:id=secret", "-shortest"])
             .arg(&clip)
             .status()
             .unwrap();
@@ -1976,9 +1977,9 @@ mod tests {
     /// Share a clip for real, watch it, rename it, replace it with a shorter
     /// version, stop sharing it.
     #[test]
-    #[ignore = "uploads to a real server: HASTECLIP_API=http://localhost:8080 cargo test -p hasteclip share_end_to_end -- --ignored"]
+    #[ignore = "uploads to a real server: VIBECLIP_API=http://localhost:8080 cargo test -p vibe-clip share_end_to_end -- --ignored"]
     fn share_end_to_end() {
-        assert!(std::env::var_os("HASTECLIP_API").is_some(), "point HASTECLIP_API at a server that isn't the real one");
+        assert!(std::env::var_os("VIBECLIP_API").is_some(), "point VIBECLIP_API at a server that isn't the real one");
         let dir = std::env::temp_dir().join(format!("hc-e2e-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let clip = dir.join("Clip.mp4");

@@ -1,12 +1,12 @@
-//! "Clipping osu! with HasteClip" on your Discord profile while HasteClip
+//! "Clipping osu! with Vibe Clip" on your Discord profile while Vibe Clip
 //! clips or records a game (on unless turned off in Settings → Sharing), with
-//! a Get HasteClip button that others see (Discord doesn't show you your own
+//! a Get Vibe Clip button that others see (Discord doesn't show you your own
 //! activity's buttons). Nothing without a game: clipping runs all day in the
 //! tray, and "Clipping" alone on a profile for hours says nothing (and is what
 //! would make someone turn it off).
 //!
 //! Discord Rich Presence: the Discord app on this computer takes an activity
-//! from us over its local pipe. The activity belongs to the "HasteClip"
+//! from us over its local pipe. The activity belongs to the "Vibe Clip"
 //! application in Discord's developer portal ([`CLIENT_ID`]), whose `logo` art
 //! asset is the small badge. The game's own picture and name come from
 //! Discord's public list of games it detects, matched by executable.
@@ -21,12 +21,13 @@ use discord_rich_presence::activity::{Activity, Assets, Button, Timestamps};
 use discord_rich_presence::{DiscordIpc, DiscordIpcClient};
 use serde::{Deserialize, Serialize};
 
-/// The HasteClip application in Discord's developer portal.
-const CLIENT_ID: &str = "1556434870572679198";
-/// Its art asset with the HasteClip logo (`assets/discord-logo.png`).
+/// The Vibe Clip application in Discord's developer portal. Empty until Vibe
+/// Clip has its own (HasteClip's id would show "HasteClip"): nothing is sent then.
+const CLIENT_ID: &str = "";
+/// Its art asset with the Vibe Clip logo (`assets/discord-logo.png`).
 const LOGO: &str = "logo";
-/// The activity's button: HasteClip's site, which shows what it is first.
-const GET: (&str, &str) = ("Get HasteClip", "https://hasteclip.com");
+/// The activity's button: Vibe Clip's site, which shows what it is first.
+const GET: (&str, &str) = ("Get Vibe Clip", "https://github.com/phsrp/vibe-clip");
 /// While wanted but not connected (Discord not running yet), try again this often.
 const RETRY_EVERY: Duration = Duration::from_secs(15);
 /// Fetch Discord's games list again after this long (it's ~13 MB).
@@ -105,7 +106,7 @@ fn run(rx: mpsc::Receiver<Option<Status>>, connected: Arc<AtomicBool>) {
             connected.store(false, Ordering::Relaxed);
             continue;
         };
-        if client.is_none() {
+        if client.is_none() && !CLIENT_ID.is_empty() {
             let mut c = DiscordIpcClient::new(CLIENT_ID);
             if c.connect().is_ok() {
                 client = Some(c);
@@ -126,13 +127,13 @@ fn run(rx: mpsc::Receiver<Option<Status>>, connected: Arc<AtomicBool>) {
 fn activity(status: &Status) -> Activity<'_> {
     let doing = if status.streaming { "Streaming" } else if status.recording { "Recording" } else { "Clipping" };
     // As Medal does it: the activity is named after the game ("osu! with
-    // HasteClip") instead of the app, so it reads like the game itself.
+    // Vibe Clip") instead of the app, so it reads like the game itself.
     let g = &status.game;
-    let (name, details) = (format!("{} with HasteClip", g.name), format!("{doing} {} with HasteClip", g.name));
+    let (name, details) = (format!("{} with Vibe Clip", g.name), format!("{doing} {} with Vibe Clip", g.name));
     let assets = match g.icon.as_deref() {
-        // The game's picture, with HasteClip as the badge in its corner.
-        Some(icon) => Assets::new().large_image(icon).large_text(g.name.as_str()).small_image(LOGO).small_text("HasteClip"),
-        None => Assets::new().large_image(LOGO).large_text("HasteClip"),
+        // The game's picture, with Vibe Clip as the badge in its corner.
+        Some(icon) => Assets::new().large_image(icon).large_text(g.name.as_str()).small_image(LOGO).small_text("Vibe Clip"),
+        None => Assets::new().large_image(LOGO).large_text("Vibe Clip"),
     };
     // In seconds: Discord takes milliseconds as seconds (whatever the crate
     // says), and a start that far ahead shows a timer stuck at 0:00.
@@ -237,7 +238,7 @@ impl KnownGame {
 }
 
 fn games_cache() -> Option<PathBuf> {
-    dirs::cache_dir().map(|d| d.join("hasteclip").join("discord-games-4.json"))
+    dirs::cache_dir().map(|d| d.join("vibe-clip").join("discord-games-4.json"))
 }
 
 /// Discord's games, from our cache while it's fresh, else downloaded (and cached).
@@ -341,7 +342,7 @@ mod tests {
         assert_eq!(name("game.exe", "/home/me/Games/wine/game.exe"), None, "already a Windows name");
     }
 
-    /// Downloads Discord's real list: `cargo test -p hasteclip discord -- --ignored`.
+    /// Downloads Discord's real list: `cargo test -p vibe-clip discord -- --ignored`.
     #[test]
     #[ignore = "network"]
     fn finds_games_by_executable() {

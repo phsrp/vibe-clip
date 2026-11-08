@@ -194,7 +194,7 @@ fn key(clip: &Clip) -> u64 {
 }
 
 fn cache_dir() -> PathBuf {
-    dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("hasteclip").join("thumbs")
+    dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("vibe-clip").join("thumbs")
 }
 
 fn generate(key: u64, video: &Path) -> (Option<egui::ColorImage>, Option<Duration>) {
@@ -317,9 +317,9 @@ mod first_frame_tests {
     /// (each pixel the average of the area it covers), in a fraction of the
     /// time ffmpeg takes to make a thumbnail (its own, bicubic).
     #[test]
-    #[ignore = "needs a clip: HASTECLIP_CLIP=<mp4> cargo test --release -p hasteclip first_frame -- --ignored --nocapture"]
+    #[ignore = "needs a clip: VIBECLIP_CLIP=<mp4> cargo test --release -p vibe-clip first_frame -- --ignored --nocapture"]
     fn first_frame_is_ffmpegs() {
-        let clip = PathBuf::from(std::env::var("HASTECLIP_CLIP").unwrap());
+        let clip = PathBuf::from(std::env::var("VIBECLIP_CLIP").unwrap());
         let t = Instant::now();
         let (w, h, ours) = first_frame(&clip).expect("decoded");
         let ours_ms = t.elapsed().as_secs_f64() * 1000.0;

@@ -300,6 +300,17 @@ pub fn reveal(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, sho
     ui.allocate_space(vec2(width, h));
 }
 
+/// A group: content on the raised surface, padded. Its height eases when
+/// what's in it changes (see [`eased_frame`]); `id` names it on its page.
+#[cfg_attr(not(test), allow(dead_code))] // (only the layout tests use it now)
+pub fn card<R>(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let frame = egui::Frame::new().fill(theme::pal(ui).raise).corner_radius(CARD_RADIUS).inner_margin(Margin::symmetric(16, 12));
+    eased_frame(ui, egui::Id::new(("card", id)), frame, |ui| {
+        ui.set_width(ui.available_width());
+        add(ui)
+    })
+}
+
 /// Scrolling content with a slim scrollbar in the page's right margin.
 pub fn scroll<R>(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let reset = ui.ctx().data(|d| d.get_temp::<bool>(scroll_reset_id())).unwrap_or(false);
@@ -322,14 +333,14 @@ pub fn scroll<R>(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui) ->
         .inner
 }
 
-/// Dev aid: `HASTECLIP_DEV_SCROLL=<area>:<from s>:<secs>:<points>` scrolls
+/// Dev aid: `VIBECLIP_DEV_SCROLL=<area>:<from s>:<secs>:<points>` scrolls
 /// the [`scroll`] area `<area>` steadily down by `<points>` over `<secs>`,
 /// starting `<from s>` after launch, as a trackpad would: to measure
-/// scrolling without touching it (with `HASTECLIP_DEV_LAPS`).
+/// scrolling without touching it (with `VIBECLIP_DEV_LAPS`).
 fn dev_scroll(ctx: &egui::Context, id: &str) -> Option<f32> {
     static PLAN: std::sync::OnceLock<Option<(String, f64, f64, f32)>> = std::sync::OnceLock::new();
     let plan = PLAN.get_or_init(|| {
-        let spec = std::env::var("HASTECLIP_DEV_SCROLL").ok()?;
+        let spec = std::env::var("VIBECLIP_DEV_SCROLL").ok()?;
         let mut it = spec.split(':');
         Some((it.next()?.to_owned(), it.next()?.parse().ok()?, it.next()?.parse().ok()?, it.next()?.parse().ok()?))
     });
@@ -1276,15 +1287,15 @@ pub fn menu_head(ui: &mut egui::Ui, text: &str) {
 /// right edge).
 pub fn menu_popup<R>(resp: &Response, left: bool, width: f32, content: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
     let id = resp.id.with("menu");
-    // Dev aid: `HASTECLIP_OPEN_MENU=<n>` opens the n-th menu button drawn
+    // Dev aid: `VIBECLIP_OPEN_MENU=<n>` opens the n-th menu button drawn
     // (from 0) once, to see it without clicking.
     #[cfg(debug_assertions)]
-    if let Some(n) = std::env::var("HASTECLIP_OPEN_MENU").ok().and_then(|s| s.parse::<u64>().ok()) {
+    if let Some(n) = std::env::var("VIBECLIP_OPEN_MENU").ok().and_then(|s| s.parse::<u64>().ok()) {
         let key = egui::Id::new("ui_kit_dev_menu");
         let (pass, count, done) = resp.ctx.data(|d| d.get_temp::<(u64, u64, bool)>(key)).unwrap_or_default();
         let now = resp.ctx.cumulative_pass_nr();
         let count = if pass == now { count } else { 0 };
-        let open = !done && count == n && resp.ctx.input(|i| i.time) > std::env::var("HASTECLIP_OPEN_MENU_AT").ok().and_then(|s| s.parse().ok()).unwrap_or(2.5);
+        let open = !done && count == n && resp.ctx.input(|i| i.time) > std::env::var("VIBECLIP_OPEN_MENU_AT").ok().and_then(|s| s.parse().ok()).unwrap_or(2.5);
         resp.ctx.data_mut(|d| d.insert_temp(key, (now, count + 1, done || open)));
         if open {
             egui::Popup::open_id(&resp.ctx, id);

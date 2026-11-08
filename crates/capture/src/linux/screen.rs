@@ -454,7 +454,7 @@ struct StreamState {
 }
 
 /// The graphics card, when pictures are taken and worked on it (whenever
-/// Vulkan can import DMA-BUFs; `HASTECLIP_NO_GPU_CAPTURE` turns it off).
+/// Vulkan can import DMA-BUFs; `VIBECLIP_NO_GPU_CAPTURE` turns it off).
 pub(crate) fn gpu_frames() -> Option<Arc<gpu::Gpu>> {
     gpu::gpu()
 }
@@ -471,7 +471,7 @@ fn run(fd: Option<OwnedFd>, node: u32, latest: &Arc<Latest>, ready: &mpsc::Sende
     };
     let stream = pw::stream::StreamRc::new(
         core.clone(),
-        "hasteclip-screen",
+        "vibe-clip-screen",
         pw::properties::properties! {
             *pw::keys::MEDIA_TYPE => "Video",
             *pw::keys::MEDIA_CATEGORY => "Capture",
@@ -750,7 +750,7 @@ mod gpu_tests {
         let px = card.read(&texture);
         let lit = px.chunks_exact(4).filter(|p| p[0] > 16 || p[1] > 16 || p[2] > 16).count();
         eprintln!("{}x{} {:?}: {rate:.1} pictures/s, {lit} lit pixels", texture.width(), texture.height(), texture.format());
-        if let Some(out) = std::env::var_os("HASTECLIP_SHOT") {
+        if let Some(out) = std::env::var_os("VIBECLIP_SHOT") {
             let (w, h) = (texture.width(), texture.height());
             let rgb: Vec<u8> = px.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0]]).collect();
             std::fs::write(out, [format!("P6\n{w} {h}\n255\n").as_bytes(), &rgb].concat()).unwrap();

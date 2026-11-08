@@ -1,4 +1,4 @@
-//! Moving clips between libraries: a `.hasteclip` file holds clips with
+//! Moving clips between libraries: a `.vibeclip` file holds clips with
 //! everything that goes with them, so they arrive in another library (another
 //! computer, a friend's) just as they were: their game folder, their edit
 //! (the original and what was cut), their markers and kills, and the
@@ -10,7 +10,7 @@
 //! ```text
 //! manifest.json          what's in it (see `Manifest`)
 //! clips/<n>/<name>       each clip as it looks now (the library's file)
-//! clips/<n>/assets/…     its edit folder (`.hasteclip/<id>/`), if it's edited
+//! clips/<n>/assets/…     its edit folder (`.vibeclip/<id>/`), if it's edited
 //! ```
 //!
 //! `manifest.json` has a format number: a newer app reads every older one,
@@ -27,13 +27,15 @@ use crate::collections::Collections;
 use crate::moments::Moments;
 
 /// The file's extension.
-pub const EXT: &str = "hasteclip";
+pub const EXT: &str = "vibeclip";
 /// The other version's: its files hold the same, and import here.
 pub const OTHER_EXT: &str = concat!("heste", "clips");
+/// HasteClip's own clips files (Vibe Clip is based on it): the same format, so they import too.
+pub const HASTECLIP_EXT: &str = "hasteclip";
 
-/// Whether a path is a clips file of either version.
+/// Whether a path is a clips file of any version.
 pub fn is_archive(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXT) || e.eq_ignore_ascii_case(OTHER_EXT))
+    path.extension().is_some_and(|e| [EXT, OTHER_EXT, HASTECLIP_EXT].iter().any(|x| e.eq_ignore_ascii_case(x)))
 }
 /// The newest manifest this app writes and reads.
 const FORMAT: u32 = 1;
@@ -120,7 +122,7 @@ pub fn export(lib: &Path, clips: &[Clip], collections: &[Vec<String>], out: &Pat
                 collections: in_collections,
             });
         }
-        let manifest = Manifest { format: FORMAT, app: format!("HasteClip {}", env!("CARGO_PKG_VERSION")), clips: entries.clone() };
+        let manifest = Manifest { format: FORMAT, app: format!("Vibe Clip {}", env!("CARGO_PKG_VERSION")), clips: entries.clone() };
         zip.start_file("manifest.json", SimpleFileOptions::default()).map_err(|e| e.to_string())?;
         zip.write_all(&serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         zip.finish().map_err(|e| e.to_string())?.flush().map_err(|e| e.to_string())?;
@@ -167,15 +169,15 @@ impl Imported {
 /// " (2)".
 pub fn import(file: &Path, lib: &Path, progress: &Progress) -> Result<Imported, String> {
     let f = std::fs::File::open(file).map_err(|e| format!("Couldn't open {}: {e}", file.display()))?;
-    let mut zip = zip::ZipArchive::new(std::io::BufReader::new(f)).map_err(|_| "This isn't a HasteClip clips file.".to_owned())?;
+    let mut zip = zip::ZipArchive::new(std::io::BufReader::new(f)).map_err(|_| "This isn't a Vibe Clip clips file.".to_owned())?;
     let manifest: Manifest = {
-        let mut m = zip.by_name("manifest.json").map_err(|_| "This isn't a HasteClip clips file (it has no list of clips).".to_owned())?;
+        let mut m = zip.by_name("manifest.json").map_err(|_| "This isn't a Vibe Clip clips file (it has no list of clips).".to_owned())?;
         let mut s = String::new();
         m.read_to_string(&mut s).map_err(|e| e.to_string())?;
         serde_json::from_str(&s).map_err(|e| format!("The list of clips in it can't be read: {e}"))?
     };
     if manifest.format > FORMAT {
-        return Err(format!("These clips were exported by a newer HasteClip ({}). Update HasteClip to import them.", manifest.app));
+        return Err(format!("These clips were exported by a newer Vibe Clip ({}). Update Vibe Clip to import them.", manifest.app));
     }
     // Everything but the list itself is copied out (or skipped and counted).
     let total: u64 = (0..zip.len()).filter_map(|i| zip.by_index_raw(i).ok().filter(|f| f.name().is_ok_and(|n| n != "manifest.json")).map(|f| f.size())).sum();
@@ -352,7 +354,7 @@ mod tests {
     }
 
     fn temp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("hasteclip-archive-test-{name}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("vibe-clip-archive-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -375,7 +377,7 @@ mod tests {
         std::fs::write(assets.join("original.mp4"), vec![1u8; 3000]).unwrap();
         std::fs::write(assets.join("edit.json"), b"{}").unwrap();
         crate::moments::add_marker(&c1.path, 21.5);
-        let out = a.join("export.hasteclip");
+        let out = a.join("export.vibeclip");
         let names = vec![vec!["Best of the week".to_owned()], vec![]];
         assert_eq!(export(&a, &[c1.clone(), c2.clone()], &names, &out, &progress()).unwrap(), 2);
 
@@ -402,7 +404,7 @@ mod tests {
         let _ = (std::fs::remove_dir_all(&a), std::fs::remove_dir_all(&b));
     }
 
-    /// Real clips, if `HASTECLIP_TEST_LIBRARY` names a library: everything
+    /// Real clips, if `VIBECLIP_TEST_LIBRARY` names a library: everything
     /// in it goes out and comes back byte for byte (a check on real files,
     /// edited ones too; it only reads the library). Run with
     /// `cargo test --release archive::tests::real_library -- --ignored`.
@@ -410,7 +412,7 @@ mod tests {
     #[ignore = "needs a real library"]
     fn real_library() {
         let _turn = crate::store::LIBRARY_TURN.lock().unwrap_or_else(|e| e.into_inner());
-        let lib = PathBuf::from(std::env::var("HASTECLIP_TEST_LIBRARY").expect("HASTECLIP_TEST_LIBRARY"));
+        let lib = PathBuf::from(std::env::var("VIBECLIP_TEST_LIBRARY").expect("VIBECLIP_TEST_LIBRARY"));
         crate::store::set_library(&lib);
         let mut clips = Vec::new();
         for entry in std::fs::read_dir(&lib).unwrap().flatten().chain(std::fs::read_dir(&lib).unwrap().flatten().filter(|e| e.path().is_dir() && !e.file_name().to_string_lossy().starts_with('.')).flat_map(|d| std::fs::read_dir(d.path()).unwrap().flatten())) {
@@ -429,7 +431,7 @@ mod tests {
             clips.push(Clip { id, path: p, name: String::new(), modified: m.modified().unwrap(), created: None, size_bytes: m.len(), original: None, folder, kept_bytes: 0 });
         }
         assert!(!clips.is_empty(), "no clips found");
-        let out = temp("real").join("all.hasteclip");
+        let out = temp("real").join("all.vibeclip");
         let names: Vec<Vec<String>> = clips.iter().map(|_| vec!["Check".to_owned()]).collect();
         let p = progress();
         let n = export(&lib, &clips, &names, &out, &p).unwrap();
@@ -459,7 +461,7 @@ mod tests {
         let (a, b) = (temp("c"), temp("d"));
         crate::store::set_library(&a);
         let c = clip(&a, None, "clip.mp4", 100);
-        let out = a.join("x.hasteclip");
+        let out = a.join("x.vibeclip");
         export(&a, &[c], &[], &out, &progress()).unwrap();
         std::fs::write(b.join("clip.mp4"), vec![0u8; 42]).unwrap();
         crate::store::set_library(&b);
@@ -471,7 +473,7 @@ mod tests {
     /// Names in the file can't put anything outside the library.
     #[test]
     fn names_stay_inside() {
-        let dir = Path::new("/lib/.hasteclip/abc");
+        let dir = Path::new("/lib/.vibeclip/abc");
         assert_eq!(inside(dir, "original.mp4"), Some(dir.join("original.mp4")));
         assert_eq!(inside(dir, "../../etc/passwd"), None);
         assert_eq!(inside(dir, ""), None);
@@ -479,7 +481,7 @@ mod tests {
         assert!(!safe_name("a/b").contains('/'));
     }
 
-    /// A file exported by the other version (`HASTECLIP_IMPORT_FROM`) comes
+    /// A file exported by the other version (`VIBECLIP_IMPORT_FROM`) comes
     /// in: edited clips are edited here (their edit folder found, original
     /// included), markers and collections kept.
     /// `cargo test --release archive::tests::import_other -- --ignored`.
@@ -487,7 +489,7 @@ mod tests {
     #[ignore = "needs a file from the other version"]
     fn import_other() {
         let _turn = crate::store::LIBRARY_TURN.lock().unwrap_or_else(|e| e.into_inner());
-        let file = PathBuf::from(std::env::var("HASTECLIP_IMPORT_FROM").expect("HASTECLIP_IMPORT_FROM"));
+        let file = PathBuf::from(std::env::var("VIBECLIP_IMPORT_FROM").expect("VIBECLIP_IMPORT_FROM"));
         let into = temp("other-into");
         crate::store::set_library(&into);
         let mut cols = Collections::load(&into);
@@ -512,9 +514,10 @@ mod tests {
     /// Either version's extension is a clips file.
     #[test]
     fn both_extensions_import() {
-        assert!(is_archive(Path::new("a.hasteclip")));
+        assert!(is_archive(Path::new("a.vibeclip")));
         assert!(is_archive(Path::new(&format!("a.{OTHER_EXT}"))));
-        assert!(is_archive(Path::new("A.HASTECLIP")));
+        assert!(is_archive(Path::new("A.VIBECLIP")));
+        assert!(is_archive(Path::new("from-hasteclip.hasteclip")));
         assert!(!is_archive(Path::new("a.mp4")));
     }
 
@@ -522,13 +525,13 @@ mod tests {
     #[test]
     fn newer_files_say_so() {
         let a = temp("e");
-        let out = a.join("new.hasteclip");
+        let out = a.join("new.vibeclip");
         let mut zip = zip::ZipWriter::new(std::fs::File::create(&out).unwrap());
         zip.start_file("manifest.json", zip::write::SimpleFileOptions::default()).unwrap();
-        zip.write_all(br#"{"format": 99, "app": "HasteClip 9.0", "clips": []}"#).unwrap();
+        zip.write_all(br#"{"format": 99, "app": "Vibe Clip 9.0", "clips": []}"#).unwrap();
         zip.finish().unwrap();
         let err = import(&out, &a, &progress()).unwrap_err();
-        assert!(err.contains("newer HasteClip"), "{err}");
+        assert!(err.contains("newer Vibe Clip"), "{err}");
         let _ = std::fs::remove_dir_all(&a);
     }
 }

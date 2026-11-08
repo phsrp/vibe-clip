@@ -1,11 +1,11 @@
 [package]
-name = "hasteclip"
+name = "vibe-clip"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "hasteclip"
+name = "vibe-clip"
 path = "src/main.rs"
 
 [dependencies]
@@ -45,7 +45,7 @@ egui-phosphor = { version = "0.14", default-features = false, features = ["fill"
 # window, which eframe doesn't have.
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 drag = "2"
-# The tray / menu bar icon (closing the window keeps HasteClip running).
+# The tray / menu bar icon (closing the window keeps Vibe Clip running).
 tray-icon = "0.21"
 
 # Linux: global shortcuts through the desktop portal (Wayland has no other
@@ -117,5 +117,5 @@ pollster = "1"
 
 [features]
 # Scripted demo recordings for the website (src/demo.rs): `cargo build
-# --release --features demo`. Without it, HASTECLIP_DEMO_SCRIPT says it can't.
+# --release --features demo`. Without it, VIBECLIP_DEMO_SCRIPT says it can't.
 demo = []

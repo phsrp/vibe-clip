@@ -1427,7 +1427,7 @@ fn picture_side(ui: &mut egui::Ui, panel: &mut CameraPanel, name: &str, fps: Opt
     if let Some(why) = slowdown(panel.fps, fps) {
         ui.add(egui::Label::new(theme::text(why, 12.5, W::Regular).color(pal.warn)).wrap());
     }
-    ui.add(egui::Label::new(theme::text("Changes apply right away, in every app, and are put back each time HasteClip opens this camera.", 12.0, W::Regular).color(pal.text3)).wrap());
+    ui.add(egui::Label::new(theme::text("Changes apply right away, in every app, and are put back each time Vibe Clip opens this camera.", 12.0, W::Regular).color(pal.text3)).wrap());
     // What's done to all of them, under what's said about them.
     let resettable = !panel.controls.is_empty();
     if resettable || capture::webcam::HAS_SETTINGS {

@@ -239,9 +239,9 @@ pub(crate) enum Action {
     Drop(Vec<PathBuf>, DropOn),
     Share(PathBuf, ShareChoice),
     /// Write these clips, with their edits, markers and collections, to a
-    /// `.hasteclip` file (for another library).
+    /// `.vibeclip` file (for another library).
     Export(Vec<PathBuf>),
-    /// Ask for `.hasteclip` files and import their clips.
+    /// Ask for `.vibeclip` files and import their clips.
     Import,
     Rename(PathBuf),
     Open(PathBuf),
@@ -782,7 +782,8 @@ pub(crate) fn clip_row(ui: &mut egui::Ui, clip: &clips::Clip, tex: Option<&egui:
 pub(crate) enum ShareChoice {
     /// The Share with a link dialog: upload it for a link, or its link.
     Link,
-    /// Copy its link (it's shared already).
+    /// Copy its link (it's shared already). Unused: Vibe Clip has no share links.
+    #[allow(dead_code)]
     CopyLink,
     Copy,
     /// A screenshot's picture on the clipboard (not its file).
@@ -791,7 +792,7 @@ pub(crate) enum ShareChoice {
     Sheet(Pos2),
     Reveal,
     Mp3,
-    /// To a `.hasteclip` file, with its edit, markers and collections.
+    /// To a `.vibeclip` file, with its edit, markers and collections.
     Export,
 }
 
@@ -951,7 +952,7 @@ mod tests {
     }
 }
 
-/// The days folded away in the library, kept in its `.hasteclip` folder so
+/// The days folded away in the library, kept in its `.vibeclip` folder so
 /// they stay folded next time. A new day starts open.
 pub(crate) struct FoldedDays {
     lib: PathBuf,
@@ -1042,7 +1043,7 @@ mod scale_tests {
     use std::time::{Instant, SystemTime};
 
     /// What the library does every frame, timed on a big library:
-    /// `cargo test -p hasteclip library_frame_cost -- --ignored --nocapture`.
+    /// `cargo test -p vibe-clip library_frame_cost -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn library_frame_cost() {

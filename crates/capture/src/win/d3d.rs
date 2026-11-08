@@ -48,7 +48,7 @@ impl Drop for ContextLock {
 /// instead of within a frame, the encoder's frames all waited on it, and up to
 /// 190 frames in 5 s were skipped. What we ask for is a few percent of the
 /// GPU; the game gives that up either way, now without our frames waiting.
-/// OBS does the same. `HASTECLIP_NO_GPU_PRIORITY=1` leaves it as it was.
+/// OBS does the same. `VIBECLIP_NO_GPU_PRIORITY=1` leaves it as it was.
 ///
 /// Only a capture's: the class is the whole process's, so it's raised while a
 /// capture's device lives and goes back to normal once the last one's gone
@@ -57,7 +57,7 @@ impl Drop for ContextLock {
 /// ones decoding for the player, scrubbing, thumbnails and exports, which
 /// came first too.
 fn raise_gpu_priority(device: &ID3D11Device) -> Option<Arc<Raised>> {
-    if std::env::var_os("HASTECLIP_NO_GPU_PRIORITY").is_some_and(|v| v != "0") {
+    if std::env::var_os("VIBECLIP_NO_GPU_PRIORITY").is_some_and(|v| v != "0") {
         return None;
     }
     {
@@ -621,9 +621,9 @@ impl Capture {
         // Free-threaded: frames arrive on a system thread, no message loop needed.
         let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(&winrt_device, format, 2, size)?;
         let session = pool.CreateCaptureSession(item)?;
-        // `HASTECLIP_CURSOR_CAPTURE=0` leaves the cursor out: a test for a
+        // `VIBECLIP_CURSOR_CAPTURE=0` leaves the cursor out: a test for a
         // cursor that vanishes in some games while they're captured.
-        let cursor = std::env::var_os("HASTECLIP_CURSOR_CAPTURE").is_none_or(|v| v != "0");
+        let cursor = std::env::var_os("VIBECLIP_CURSOR_CAPTURE").is_none_or(|v| v != "0");
         let _ = session.SetIsCursorCaptureEnabled(cursor);
         // Windows 11: no yellow "being captured" border.
         let _ = session.SetIsBorderRequired(false);
@@ -704,9 +704,9 @@ impl Capture {
                 eprintln!("windows' capture: couldn't copy a frame: {e:#}");
             }
             if let Ok(Some(size)) = copied {
-                // `HASTECLIP_WGC_LOG=1`: how many frames arrive each second.
+                // `VIBECLIP_WGC_LOG=1`: how many frames arrive each second.
                 static LOG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-                if *LOG.get_or_init(|| std::env::var_os("HASTECLIP_WGC_LOG").is_some()) {
+                if *LOG.get_or_init(|| std::env::var_os("VIBECLIP_WGC_LOG").is_some()) {
                     let mut c = counted2.lock().unwrap();
                     c.1 += 1;
                     if c.0.elapsed() >= std::time::Duration::from_secs(1) {
@@ -1258,7 +1258,7 @@ mod priority_tests {
     /// it's back to normal. A device for decoding never raises it.
     #[test]
     fn gpu_priority_follows_captures() {
-        if std::env::var_os("HASTECLIP_NO_GPU_PRIORITY").is_some() {
+        if std::env::var_os("VIBECLIP_NO_GPU_PRIORITY").is_some() {
             return;
         }
         let Ok(decoder) = Gpu::new() else {

@@ -1,13 +1,13 @@
 [Desktop Entry]
 Type=Application
-Name=HasteClip
+Name=Vibe Clip
 GenericName=Clip Recorder
 Comment=Keep a replay buffer running and save clips with a hotkey
-Exec=hasteclip
-Icon=io.github.kaillr.HasteClip
+Exec=vibe-clip
+Icon=io.github.phsrp.VibeClip
 Terminal=false
 Categories=AudioVideo;Video;Recorder;
 Keywords=clip;replay;record;screen;capture;game;
-StartupWMClass=io.github.kaillr.HasteClip
+StartupWMClass=io.github.phsrp.VibeClip
 SingleMainWindow=true
 X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1,org_kde_plasma_window_management

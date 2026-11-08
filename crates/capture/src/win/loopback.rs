@@ -4,9 +4,9 @@
 //!
 //! - **App source**: one include stream per top process of the app, so its
 //!   helpers (browser tabs, Discord's voice process) come along.
-//! - **Desktop**: everything except HasteClip itself (a mic you "Listen" to
+//! - **Desktop**: everything except Vibe Clip itself (a mic you "Listen" to
 //!   would be heard twice); what it plays for you is added back in by
-//!   `sources::own_sound`, as is a HasteClip app source's sound.
+//!   `sources::own_sound`, as is a Vibe Clip app source's sound.
 //! - **Desktop minus app sources**: WASAPI can exclude only one tree, so while
 //!   any of those apps runs, the desktop is rebuilt from an include stream per
 //!   process that has an audio session — minus the apps, minus us.
@@ -369,7 +369,7 @@ fn sync_taps(taps: &mut [Tap], start: fn(Target, Arc<SourceFeed>) -> Result<Stre
         let wanted: Vec<Target> = match &tap.source.kind {
             SourceKind::App { bundle_id } => {
                 // Never this process (its sound comes from `own_sound`), but
-                // another HasteClip running, yes.
+                // another Vibe Clip running, yes.
                 let mut roots = tree.roots_of(bundle_id);
                 roots.retain(|&pid| pid != own);
                 let own_source = crate::sources::is_own_app(&tap.source.kind, own_app.as_deref());
@@ -633,7 +633,7 @@ mod tests {
             }
             t.elapsed()
         };
-        system.add(app("app", "hasteclip-test-no-such-app.exe"), SourceFeed::new(RATE, Arc::new(Clock::default())), channel.clone());
+        system.add(app("app", "vibe-clip-test-no-such-app.exe"), SourceFeed::new(RATE, Arc::new(Clock::default())), channel.clone());
         let took = until(SourceStatus::WaitingForApp);
         assert!(took < Duration::from_millis(500), "added: waiting for its app after {took:?}");
         system.remove("app");

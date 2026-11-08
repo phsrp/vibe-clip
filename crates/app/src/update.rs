@@ -9,7 +9,7 @@
 //! On Linux there's no installer: the release tarball, unpacked anywhere the
 //! user can write to, updates its own folder the same way
 //! (`crate::update_linux`). On macOS the app in Applications is replaced by
-//! the release's, once it's checked to be signed with HasteClip's
+//! the release's, once it's checked to be signed with Vibe Clip's
 //! certificate (`crate::update_mac`).
 //!
 //! A copy run from the build folder (`cargo run`) isn't installed, so it has
@@ -29,7 +29,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 /// Where releases are published.
-pub const REPO: &str = "https://github.com/hasteclip/hasteclip";
+pub const REPO: &str = "https://github.com/phsrp/vibe-clip";
 
 /// First check after launch: right away, but after the window is up.
 const FIRST_CHECK_AFTER: Duration = Duration::from_secs(3);
