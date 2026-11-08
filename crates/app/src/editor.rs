@@ -547,6 +547,8 @@ impl Ready {
             self.player.seek(self.edit.start);
             self.player.play(self.edit.end);
         }
+        // Each part plays at its speed (Vibe Clip), the sound keeping its pitch.
+        self.player.set_speed(self.edit.speed_at(self.player.time()) as f32);
         self.was_playing = self.player.is_playing();
         self.ease_view(&ctx);
 
@@ -2276,11 +2278,22 @@ impl Ready {
             let h = 3.0 + 2.0 * hv;
             let bar = Rect::from_x_y_ranges(range.left() + 1.0..=(range.right() - 1.0).max(range.left() + 1.0), dim_y - h / 2.0..=dim_y + h / 2.0);
             p.rect_filled(bar, h / 2.0, crate::theme::mix(pal.line2, pal.text2, hv));
+            // A part at another speed says so, on its bar's start (Vibe Clip).
+            let speed = parts.get(k).map_or(1.0, |&(a, _)| self.edit.speed_at(a));
+            if (speed - 1.0).abs() > 1e-6 {
+                let g = p.layout_no_wrap(speed_label(speed), crate::theme::font(11.0, crate::theme::W::Semibold), Color32::WHITE);
+                let pill = Rect::from_min_size(Pos2::new(range.left() + 4.0, dim_y - 8.0), Vec2::new(g.size().x + 10.0, 16.0));
+                if pill.right() < range.right() - 2.0 {
+                    p.rect_filled(pill, 8.0, pal.stream);
+                    p.galley(pill.center() - g.size() / 2.0, g, Color32::WHITE);
+                }
+            }
             // In parts, each says how long it is.
             if hovered && n > 1 {
                 let (a, b) = parts[k];
                 let long = if self.show_frames { format!("{} frames", ((b - a) * self.info.fps).round() as u64) } else { crate::transport::clock(b - a) };
-                tip = Some(format!("This part: {long}. Drag to slide it along the clip"));
+                let at = if (speed - 1.0).abs() > 1e-6 { format!(" at {}", speed_label(speed)) } else { String::new() };
+                tip = Some(format!("This part: {long}{at}. Drag to slide it along the clip, right-click for its speed"));
             }
         }
         // How long it all is: the parts together. With one part, click it
@@ -2501,6 +2514,7 @@ impl Ready {
                 RemovePoint(usize, usize),
                 PointLevel(usize, usize, f32),
                 Typed(usize, f32),
+                Speed(usize, f64),
             }
             let can_split = self.split_at(t).is_some();
             let at_playhead = self.part_at(self.player.time());
@@ -2523,6 +2537,16 @@ impl Ready {
                         if item.show(ui).clicked() {
                             act = Some(Act::CutOut(k));
                         }
+                        // How fast this part plays in the saved clip (Vibe Clip).
+                        let now = self.edit.parts().get(k).map_or(1.0, |&(a, _)| self.edit.speed_at(a));
+                        crate::ui_kit::submenu(ui, Item::new("Speed").icon(icon::GAUGE).value(speed_label(now)), |ui| {
+                            for s in media::SPEEDS {
+                                let label = if s == 1.0 { "1×  Normal".to_owned() } else { speed_label(s) };
+                                if Item::new(label).check((now - s).abs() < 1e-6).show(ui).clicked() {
+                                    act = Some(Act::Speed(k, s));
+                                }
+                            }
+                        });
                     }
                     Spot::Split(_) => {
                         if Item::new("Join the parts").icon(icon::ARROWS_IN_LINE_HORIZONTAL).tip("Take the split away").show(ui).clicked() {
@@ -2604,6 +2628,12 @@ impl Ready {
                 }
                 Some(Act::RemovePoint(i, k)) => self.remove_point(i, k),
                 Some(Act::Typed(i, db)) => self.set_level_at(i, vol_t, db),
+                Some(Act::Speed(k, s)) => {
+                    if let Some(&(a, b)) = self.edit.parts().get(k) {
+                        self.push_undo(self.edit.clone());
+                        self.edit.set_speed(a, b, s);
+                    }
+                }
                 Some(Act::PointLevel(i, k, db)) => {
                     if let Some(pt) = self.edit.tracks.get(i).and_then(|t| t.points.get(k)).copied() {
                         self.push_undo(self.edit.clone());
@@ -2614,6 +2644,12 @@ impl Ready {
             }
         }
     }
+}
+
+/// A speed as the editor shows it: "2×", "0.5×", "1.25×".
+fn speed_label(s: f64) -> String {
+    let t = format!("{s:.2}");
+    format!("{}×", t.trim_end_matches('0').trim_end_matches('.'))
 }
 
 /// How shown lane `i`'s M and S are (they take room from its name).

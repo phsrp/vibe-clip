@@ -485,7 +485,23 @@ pub struct Edit {
     /// How the saved file is made: size, rate, bitrate, audio.
     #[serde(default)]
     pub output: Output,
+    /// How fast the recording plays in the saved clip (Vibe Clip): marks in
+    /// order, each speed holding from its time until the next mark. None: all
+    /// of it at its own speed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub speed: Vec<SpeedMark>,
 }
+
+/// From `at` seconds of the recording on (until the next mark), it plays
+/// `speed` times as fast in the saved clip: 2 is twice as fast, 0.5 half.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SpeedMark {
+    pub at: f64,
+    pub speed: f64,
+}
+
+/// The speeds a part can be set to, slowest first.
+pub const SPEEDS: [f64; 9] = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0];
 
 /// A stretch cut out of the middle of a clip: `from` to `to` seconds of the
 /// recording. One of no length is a split: the clip in two parts, nothing
@@ -779,6 +795,9 @@ impl Edit {
                 p.t -= by;
             }
         }
+        for m in &mut e.speed {
+            m.at = (m.at - by).max(0.0);
+        }
         e
     }
 
@@ -796,6 +815,7 @@ impl Edit {
                 .map(|a| TrackEdit { index: a.index, gain: 1.0, muted: !a.in_mix, points: Vec::new() })
                 .collect(),
             output: Output::default(),
+            speed: Vec::new(),
         }
     }
 
@@ -811,14 +831,59 @@ impl Edit {
         self.start <= eps
             && self.end >= info.duration - eps
             && self.kept().len() == 1
+            && !self.changes_speed()
             && self.tracks.iter().all(as_recorded)
             && !self.output.changes_video(info)
             && !(self.output.mix_only && self.tracks.len() > 1)
     }
 
-    /// How long the saved clip is: the parts kept, together.
+    /// How long the saved clip is: the parts kept, together, each at its speed.
     pub fn duration(&self) -> f64 {
-        self.parts().iter().map(|(a, b)| (b - a).max(0.0)).sum()
+        self.spans().iter().map(|(a, b, s)| (b - a).max(0.0) / s).sum()
+    }
+
+    /// How fast `t` seconds of the recording plays in the saved clip.
+    pub fn speed_at(&self, t: f64) -> f64 {
+        self.speed.iter().rev().find(|m| m.at <= t + 1e-6).map_or(1.0, |m| m.speed)
+    }
+
+    /// Whether any of what's kept plays faster or slower than recorded.
+    pub fn changes_speed(&self) -> bool {
+        self.spans().iter().any(|&(_, _, s)| (s - 1.0).abs() > 1e-6)
+    }
+
+    /// Play `from` to `to` seconds of the recording at `speed` (a part's
+    /// ends), leaving what's after it as it was.
+    pub fn set_speed(&mut self, from: f64, to: f64, speed: f64) {
+        let after = self.speed_at(to);
+        self.speed.retain(|m| m.at < from - 1e-6 || m.at > to + 1e-6);
+        self.speed.push(SpeedMark { at: from, speed });
+        if to < self.end - 1e-6 {
+            self.speed.push(SpeedMark { at: to, speed: after });
+        }
+        self.speed.sort_by(|a, b| a.at.total_cmp(&b.at));
+        // Only the marks that change something.
+        let mut was = 1.0;
+        self.speed.retain(|m| {
+            let keep = (m.speed - was).abs() > 1e-6;
+            was = m.speed;
+            keep
+        });
+    }
+
+    /// What the saved clip is made of, in order: `(from, to, speed)` stretches
+    /// of the recording, each kept part split where its speed changes.
+    pub fn spans(&self) -> Vec<(f64, f64, f64)> {
+        let mut out = Vec::new();
+        for (a, b) in self.kept() {
+            let mut from = a;
+            for m in self.speed.iter().filter(|m| m.at > a + 1e-6 && m.at < b - 1e-6) {
+                out.push((from, m.at, self.speed_at(from)));
+                from = m.at;
+            }
+            out.push((from, b, self.speed_at(from)));
+        }
+        out
     }
 
     /// The parts kept, in order, as `(from, to)` seconds of the recording:
@@ -857,13 +922,56 @@ impl Edit {
 
     /// Where `t` seconds of the recording is in the saved clip, if it's kept.
     pub fn to_output(&self, t: f64) -> Option<f64> {
-        output_time(&self.kept(), t)
+        output_time_at(&self.spans(), t)
     }
 
     /// The recording's time at `t` seconds into the saved clip.
     pub fn to_source(&self, t: f64) -> f64 {
-        source_time(&self.kept(), t)
+        source_time_at(&self.spans(), t)
     }
+}
+
+/// [`output_time`] for stretches that play at their own speeds (`(from, to,
+/// speed)`, as [`Edit::spans`] has them).
+pub fn output_time_at(spans: &[(f64, f64, f64)], t: f64) -> Option<f64> {
+    let mut at = 0.0;
+    for (i, &(a, b, s)) in spans.iter().enumerate() {
+        if t >= a - 1e-9 && (t < b || (i + 1 == spans.len() && t <= b + 1e-9)) {
+            return Some(at + (t - a).max(0.0) / s);
+        }
+        at += (b - a) / s;
+    }
+    None
+}
+
+/// [`source_time`] for stretches that play at their own speeds.
+pub fn source_time_at(spans: &[(f64, f64, f64)], t: f64) -> f64 {
+    let mut at = 0.0;
+    for &(a, b, s) in spans {
+        let len = (b - a) / s;
+        if t < at + len {
+            return a + (t - at).max(0.0) * s;
+        }
+        at += len;
+    }
+    spans.last().map_or(t, |&(_, b, _)| b)
+}
+
+/// FFmpeg's `atempo` takes 0.5 to 2 (more slows the sound down with clicks):
+/// a bigger change is several of them, chained (4x is 2x then 2x).
+fn atempo(speed: f64) -> String {
+    let mut parts = Vec::new();
+    let mut s = speed;
+    while s > 2.0 + 1e-9 {
+        parts.push(2.0);
+        s /= 2.0;
+    }
+    while s < 0.5 - 1e-9 {
+        parts.push(0.5);
+        s /= 0.5;
+    }
+    parts.push(s);
+    parts.iter().map(|p| format!("atempo={p:.6}")).collect::<Vec<_>>().join(",")
 }
 
 /// Where `t` seconds of a recording is in a clip made of `parts` of it (in
@@ -1230,8 +1338,9 @@ impl Piece {
 /// edges around a stream-copied middle (its first to last keyframe).
 fn plan(source: &Path, info: &ClipInfo, edit: &Edit) -> Vec<Piece> {
     let kept = edit.kept();
-    // A new size, rate or bitrate: every frame is encoded again.
-    if edit.output.changes_video(info) {
+    // A new size, rate or bitrate, or a part sped up or slowed down: every
+    // frame is encoded again.
+    if edit.output.changes_video(info) || edit.changes_speed() {
         return kept.into_iter().map(|(a, b)| Piece::Encode(a, b)).collect();
     }
     let fd = info.frame_duration();
@@ -1430,6 +1539,36 @@ fn render_video(source: &Path, info: &ClipInfo, edit: &Edit, pieces: &[Piece], w
         run_progress(&mut cmd, parts.iter().map(|(a, b)| b - a).sum(), progress)
     };
 
+    // Parts at other speeds (Vibe Clip): each part's frames retimed by its
+    // speed, joined, then back to the clip's frame rate (a part twice as fast
+    // has twice the frames a second; every other one goes). By ffmpeg, in one
+    // go: the graphics card's export doesn't change speed.
+    if edit.changes_speed() {
+        let spans = edit.spans();
+        let n = spans.len();
+        let mut cmd = ffmpeg();
+        cmd.args(["-hide_banner", "-loglevel", "error", "-y"]).args(vaapi_device(encoder));
+        for (from, to, _) in &spans {
+            cmd.args(["-ss", &format!("{from:.6}"), "-to", &format!("{to:.6}"), "-i"]).arg(source);
+        }
+        let mut graph: Vec<String> = spans.iter().enumerate().map(|(i, (_, _, s))| format!("[{i}:v:0]setpts=(PTS-STARTPTS)/{s:.6}[v{i}]")).collect();
+        let inputs: String = (0..n).map(|i| format!("[v{i}]")).collect();
+        let mut chain = vec![format!("{inputs}concat=n={n}:v=1:a=0")];
+        if output.fps.is_none() {
+            chain.push(format!("fps={}", edit.output.frame_rate(info)));
+        }
+        chain.extend(filters.iter().cloned());
+        graph.push(chain.join(","));
+        cmd.args(["-filter_complex", &graph.join(";")])
+            .args(["-an", "-c:v", encoder, "-b:v", &format!("{kbps}k")])
+            .args(&cap)
+            .args(["-profile:v", "high"])
+            .args(if encoder == "h264_vaapi" { &[][..] } else { &["-pix_fmt", "yuv420p"][..] })
+            .args(["-video_track_timescale", &timescale])
+            .arg(out);
+        return run_progress(&mut cmd, edit.duration(), progress);
+    }
+
     // All of it encoded again (a piece for each part): in one go, on the
     // graphics card where it can be (much faster), else by ffmpeg.
     let encoded: Option<Vec<(f64, f64)>> = pieces.iter().map(|p| if let Piece::Encode(a, b) = *p { Some((a, b)) } else { None }).collect();
@@ -1513,10 +1652,14 @@ fn mux_audio(source: &Path, info: &ClipInfo, edit: &Edit, id: Option<&str>, vide
     // asking early and cutting the parts out by time keeps all of them, in
     // time with the picture (a part cut from a seek's start came out short).
     let from = (edit.start - 1.0).max(0.0);
-    // The parts, in seconds from there, and how far each join's crossfade
-    // reaches either side.
-    let kept: Vec<(f64, f64)> = edit.kept().iter().map(|(a, b)| (a - from, b - from)).collect();
+    // The parts, in seconds from there, each with its speed (split where the
+    // speed changes), and how far each join's crossfade reaches either side.
+    let spans: Vec<(f64, f64, f64)> = edit.spans().iter().map(|(a, b, s)| (a - from, b - from, *s)).collect();
+    let kept: Vec<(f64, f64)> = spans.iter().map(|&(a, b, _)| (a, b)).collect();
+    let speeds: Vec<f64> = spans.iter().map(|&(_, _, s)| s).collect();
     let fades = join_fades(&kept);
+    // A part at another speed: its sound too, keeping its pitch.
+    let tempo = |s: f64| if (s - 1.0).abs() > 1e-6 { format!(",{}", atempo(s)) } else { String::new() };
     // Every sound exactly as long as the parts: padded with silence where a
     // track runs short, trimmed where a crossfade's rounding runs over. The
     // picture is never cut to the sound: ended by its shortest stream
@@ -1532,7 +1675,7 @@ fn mux_audio(source: &Path, info: &ClipInfo, edit: &Edit, id: Option<&str>, vide
         // set before the parts are cut out, on the recording's own time).
         let level = format!("[1:a:{}]volume='{}':eval=frame", t.index, t.volume_expr(from));
         if let [(a, b)] = kept[..] {
-            graph.push(format!("{level},atrim=start={a:.6}:end={b:.6},asetpts=PTS-STARTPTS,{exact},asplit=2[m{i}][s{i}]"));
+            graph.push(format!("{level},atrim=start={a:.6}:end={b:.6},asetpts=PTS-STARTPTS{},{exact},asplit=2[m{i}][s{i}]", tempo(speeds[0])));
         } else {
             // Each part, running on into what's cut out either side of a
             // join by as much as that join crossfades over, then joined: the
@@ -1542,12 +1685,14 @@ fn mux_audio(source: &Path, info: &ClipInfo, edit: &Edit, id: Option<&str>, vide
             for (k, &(a, b)) in kept.iter().enumerate() {
                 let before = if k > 0 { fades[k - 1] } else { 0.0 };
                 let after = fades.get(k).copied().unwrap_or(0.0);
-                graph.push(format!("[p{i}_{k}]atrim=start={:.6}:end={:.6},asetpts=PTS-STARTPTS[q{i}_{k}]", a - before, b + after));
+                graph.push(format!("[p{i}_{k}]atrim=start={:.6}:end={:.6},asetpts=PTS-STARTPTS{}[q{i}_{k}]", a - before, b + after, tempo(speeds[k])));
             }
             let mut joined = format!("[q{i}_0]");
             for k in 1..n {
                 let to = format!("[j{i}_{k}]");
-                graph.push(format!("{joined}[q{i}_{k}]acrossfade=d={:.6}:c1=tri:c2=tri{to}", 2.0 * fades[k - 1]));
+                // What each side runs on by, at its own speed.
+                let d = fades[k - 1] / speeds[k - 1] + fades[k - 1] / speeds[k];
+                graph.push(format!("{joined}[q{i}_{k}]acrossfade=d={d:.6}:c1=tri:c2=tri{to}"));
                 joined = to;
             }
             graph.push(format!("{joined}{exact},asplit=2[m{i}][s{i}]"));
@@ -1970,7 +2115,7 @@ mod tests {
     #[test]
     fn output_settings() {
         let info = info();
-        let edit = |output| Edit { start: 0.0, end: 60.0, cuts: Vec::new(), tracks: Vec::new(), output };
+        let edit = |output| Edit { start: 0.0, end: 60.0, cuts: Vec::new(), tracks: Vec::new(), output, speed: Vec::new() };
         // Nothing chosen, or nothing below the source: the video is copied.
         assert!(!Output::default().changes_video(&info));
         assert!(!Output { height: Some(2338), fps: Some(60), video_kbps: Some(30_000), ..Default::default() }.changes_video(&info));
@@ -2016,7 +2161,7 @@ mod tests {
     #[test]
     fn a_size_is_a_ceiling() {
         let info = ClipInfo { duration: 10.0, fps: 60.0, width: 1920, height: 1080, video_kbps: Some(15_000), audio: Vec::new(), id: None, bt601: false };
-        let edit = |output| Edit { start: 0.0, end: 10.0, cuts: Vec::new(), tracks: Vec::new(), output };
+        let edit = |output| Edit { start: 0.0, end: 10.0, cuts: Vec::new(), tracks: Vec::new(), output, speed: Vec::new() };
         let o = Output { height: Some(720), max_mb: Some(100), ..Default::default() };
         let k = o.video_kbps_for(&info, &edit(o)).unwrap();
         assert!(k < 15_000, "a 720p copy needs less than the 1080p clip: {k}");
@@ -2050,7 +2195,7 @@ mod tests {
         assert_eq!(Output { height: Some(1080), ..o }.size(&info), (1920, 1080));
         assert_eq!(Output { height: Some(1440), ..o }.effective(&info).height, None);
         // Fewer pixels, so less bitrate for the same look.
-        let edit = Edit { start: 0.0, end: 60.0, cuts: Vec::new(), tracks: Vec::new(), output: o };
+        let edit = Edit { start: 0.0, end: 60.0, cuts: Vec::new(), tracks: Vec::new(), output: o, speed: Vec::new() };
         assert!(o.video_kbps_for(&info, &edit).unwrap() < 20_000);
         assert!(!edit.is_identity(&info));
         // A crop of all of it is none.
@@ -2072,7 +2217,7 @@ mod tests {
     /// length) shows as two parts but saves as one.
     #[test]
     fn parts_and_cuts() {
-        let mut e = Edit { start: 2.0, end: 20.0, cuts: Vec::new(), tracks: Vec::new(), output: Default::default() };
+        let mut e = Edit { start: 2.0, end: 20.0, cuts: Vec::new(), tracks: Vec::new(), output: Default::default(), speed: Vec::new() };
         assert_eq!(e.parts(), [(2.0, 20.0)]);
         e.set_parts(&[(2.0, 5.0), (5.0, 9.0), (12.0, 20.0)]);
         assert_eq!(e.cuts, [Cut { from: 5.0, to: 5.0 }, Cut { from: 9.0, to: 12.0 }]);
@@ -2206,6 +2351,71 @@ mod cut_render_tests {
         let decoded = kept(String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| l.trim().trim_end_matches(',').parse().ok()).collect());
         assert_eq!(read, [2.0, 4.0]);
         assert_eq!(read, decoded);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Speeds (Vibe Clip): set on a part, they hold to its end; the clip is as
+    /// long as each stretch at its speed; times map through them.
+    #[test]
+    fn speeds() {
+        let mut e = Edit { start: 0.0, end: 10.0, cuts: Vec::new(), tracks: Vec::new(), output: Output::default(), speed: Vec::new() };
+        e.set_parts(&[(0.0, 4.0), (4.0, 10.0)]);
+        assert!(!e.changes_speed());
+        e.set_speed(4.0, 10.0, 2.0);
+        assert_eq!(e.speed, [SpeedMark { at: 4.0, speed: 2.0 }]);
+        assert_eq!(e.spans(), [(0.0, 4.0, 1.0), (4.0, 10.0, 2.0)]);
+        assert!((e.duration() - 7.0).abs() < 1e-9);
+        assert_eq!(e.to_output(6.0), Some(5.0));
+        assert!((e.to_source(5.0) - 6.0).abs() < 1e-9);
+        // The first part slower: the second keeps its own speed.
+        e.set_speed(0.0, 4.0, 0.5);
+        assert_eq!(e.spans(), [(0.0, 4.0, 0.5), (4.0, 10.0, 2.0)]);
+        assert!((e.duration() - 11.0).abs() < 1e-9);
+        // Back to normal: no marks left that change nothing.
+        e.set_speed(0.0, 4.0, 1.0);
+        e.set_speed(4.0, 10.0, 1.0);
+        assert!(e.speed.is_empty());
+        // Split inside a sped-up part: both halves keep its speed (and save
+        // as one stretch, the split changing nothing).
+        e.set_speed(4.0, 10.0, 2.0);
+        e.set_parts(&[(0.0, 4.0), (4.0, 7.0), (7.0, 10.0)]);
+        assert_eq!((e.speed_at(5.0), e.speed_at(8.0)), (2.0, 2.0));
+        assert_eq!(e.spans(), [(0.0, 4.0, 1.0), (4.0, 10.0, 2.0)]);
+        // One half back to normal: only that half.
+        e.set_speed(7.0, 10.0, 1.0);
+        assert_eq!(e.spans(), [(0.0, 4.0, 1.0), (4.0, 7.0, 2.0), (7.0, 10.0, 1.0)]);
+        assert_eq!(atempo(4.0), "atempo=2.000000,atempo=2.000000");
+        assert_eq!(atempo(0.25), "atempo=0.500000,atempo=0.500000");
+    }
+
+    /// A clip with parts at other speeds saves as long as they make it, every
+    /// frame at the clip's own rate, the sound as long as the picture.
+    #[test]
+    fn speed_changes_the_saved_clip() {
+        let dir = std::env::temp_dir().join(format!("vc-media-speed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (src, out) = (dir.join("clip.mp4"), dir.join("speed.mp4"));
+        clip(&src);
+        let info = probe(&src).unwrap();
+        let mut edit = Edit::new(&info);
+        // 0.5–2.5 at half speed (4 s), 2.5–4.5 twice as fast (1 s).
+        edit.set_parts(&[(0.5, 2.5), (2.5, 4.5)]);
+        edit.set_speed(0.5, 2.5, 0.5);
+        edit.set_speed(2.5, 4.5, 2.0);
+        assert!((edit.duration() - 5.0).abs() < 1e-9);
+        assert!(plan(&src, &info, &edit).iter().all(|p| matches!(p, Piece::Encode(..))), "nothing copied as it is");
+        render_to(&src, &info, &edit, &out, None).unwrap();
+        let made = probe(&out).unwrap();
+        assert!((made.duration - 5.0).abs() < 0.05, "lasts {} s, not 5", made.duration);
+        assert!((made.fps - info.fps).abs() < 0.01, "at {} fps, not the clip's {}", made.fps, info.fps);
+        let frames = ffprobe().args(["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0"]).arg(&out).output().unwrap();
+        let frames: f64 = String::from_utf8_lossy(&frames.stdout).trim().parse().unwrap();
+        assert!((frames - 5.0 * info.fps).abs() <= 1.0, "{frames} frames");
+        for stream in 0..2 {
+            let secs = decode_audio(&out, stream).unwrap().len() as f64 / 2.0 / PREVIEW_RATE as f64;
+            assert!((secs - 5.0).abs() < 0.002, "sound {stream} lasts {secs} s");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -272,7 +272,7 @@ impl Viewer {
     /// editor opened from here to carry on there.
     pub fn at(&self) -> Option<Resume> {
         match &self.state {
-            State::Ready(r) => Some(Resume { at: media::source_time(&r.span.parts, r.player.time()), playing: r.player.is_playing() }),
+            State::Ready(r) => Some(Resume { at: media::source_time_at(&r.span.parts, r.player.time()), playing: r.player.is_playing() }),
             _ => None,
         }
     }
@@ -587,7 +587,7 @@ impl Ready {
             player.seek(t);
         }
         if let Some(r) = resume
-            && let Some(at) = media::output_time(&l.span.parts, r.at)
+            && let Some(at) = media::output_time_at(&l.span.parts, r.at)
         {
             if !taken {
                 player.seek(at.min(l.info.duration));
@@ -638,7 +638,7 @@ impl Ready {
     /// The clip's moments as pins on this file's timeline.
     fn pins(&self) -> Vec<crate::transport::Moment> {
         let mut pins = self.moments.pins(self.span.recording);
-        pins.retain_mut(|m| match media::output_time(&self.span.parts, m.t) {
+        pins.retain_mut(|m| match media::output_time_at(&self.span.parts, m.t) {
             Some(t) => {
                 m.t = t;
                 (0.0..=self.info.duration).contains(&t)
@@ -652,7 +652,7 @@ impl Ready {
     /// that's there.
     fn toggle_marker(&mut self) {
         let t = self.info.snap(self.player.time());
-        let at = media::source_time(&self.span.parts, t);
+        let at = media::source_time_at(&self.span.parts, t);
         if let Some(&m) = self.moments.markers.iter().find(|m| (*m - at).abs() < self.info.frame_duration().max(0.02)) {
             crate::moments::remove_marker(&self.clip, m);
         } else {
@@ -991,7 +991,7 @@ impl Ready {
         match crate::transport::ruler(ui, ruler, (0.0, dur), self.info.fps, self.show_frames, moments, true) {
             Some(crate::transport::Pinned::Go(t)) => self.seek(t),
             Some(crate::transport::Pinned::Remove(t)) => {
-                crate::moments::remove_marker(&self.clip, media::source_time(&self.span.parts, t));
+                crate::moments::remove_marker(&self.clip, media::source_time_at(&self.span.parts, t));
                 self.moments = crate::moments::of(&self.clip);
             }
             None => {}
@@ -1311,7 +1311,8 @@ fn volume_id() -> egui::Id {
 /// it's made of (in order), and how long the recording is.
 #[derive(Clone)]
 struct Span {
-    parts: Vec<(f64, f64)>,
+    /// `(from, to, speed)`: speed is how fast that stretch plays in the clip.
+    parts: Vec<(f64, f64, f64)>,
     recording: f64,
 }
 
@@ -1320,7 +1321,7 @@ struct Span {
 /// (unless the editor kept it): freeing up space trims it with the player
 /// open, and the editor would then find what it was.
 fn recording_span(path: &Path, duration: f64, kept: &Kept) -> Span {
-    let whole = Span { parts: vec![(0.0, duration)], recording: duration };
+    let whole = Span { parts: vec![(0.0, duration, 1.0)], recording: duration };
     let target = crate::store::EditTarget::of(path);
     if target.source == target.clip {
         return whole;
@@ -1330,7 +1331,7 @@ fn recording_span(path: &Path, duration: f64, kept: &Kept) -> Span {
         Some(info) => info.duration,
         None => media::probe(&target.source).map_or(edit.end, |i| i.duration),
     };
-    Span { parts: edit.kept(), recording }
+    Span { parts: edit.spans(), recording }
 }
 
 /// The speeds offered.

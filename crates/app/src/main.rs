@@ -2398,7 +2398,7 @@ impl App {
                     let made = std::fs::metadata(&target.clip).and_then(|m| m.modified()).ok();
                     media::render_with_progress(&target.source, &info, &edit, dest, None, report).map_err(|e| e.to_string()).map(|()| {
                         // A new clip of part of this one: the moments in that part.
-                        moments::rebase(&target.clip, dest, info.duration, &edit.kept());
+                        moments::rebase(&target.clip, dest, info.duration, &edit.spans());
                         keep_date(dest, made);
                         dest.clone()
                     })
