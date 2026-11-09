@@ -21,9 +21,9 @@ use discord_rich_presence::activity::{Activity, Assets, Button, Timestamps};
 use discord_rich_presence::{DiscordIpc, DiscordIpcClient};
 use serde::{Deserialize, Serialize};
 
-/// The Vibe Clip application in Discord's developer portal. Empty until Vibe
-/// Clip has its own (HasteClip's id would show "HasteClip"): nothing is sent then.
-const CLIENT_ID: &str = "";
+/// The Vibe Clip application in Discord's developer portal (empty: nothing
+/// is sent).
+const CLIENT_ID: &str = "1569264138272907344";
 /// Its art asset with the Vibe Clip logo (`assets/discord-logo.png`).
 const LOGO: &str = "logo";
 /// The activity's button: Vibe Clip's site, which shows what it is first.
