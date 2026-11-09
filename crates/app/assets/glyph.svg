@@ -1,8 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Vibe Clip's glyph: a play button with speed lines trailing behind it
-       ("instant replay"), in one colour on transparent. -->
-  <g transform="translate(10 0)" fill="#fff" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M 238 136 L 238 376 L 430 256 Z" stroke-width="52"/>
-    <path d="M 102 178 H 168 M 54 256 H 168 M 102 334 H 168" stroke-width="42" fill="none"/>
-  </g>
+  <!-- Vibe Clip's glyph: a V (for Vibe) with a record dot in it, in one
+       colour on transparent. scripts/icons.py renders every icon from this
+       and icon-tile.svg / icon-mac.svg. -->
+  <g fill="#fff" stroke="#fff"><path d="M 72 104 L 256 462 L 440 104" fill="none" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="118" r="48" stroke="none"/></g>
 </svg>

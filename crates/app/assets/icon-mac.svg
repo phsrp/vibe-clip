@@ -1,28 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- Vibe Clip's app icon: the glyph in white on a rounded tile, violet to pink. -->
-  <defs>
-    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8b5cf6"/>
-      <stop offset="0.55" stop-color="#a855f7"/>
-      <stop offset="1" stop-color="#ec4899"/>
-    </linearGradient>
-    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.22"/>
-      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#2e1065" flood-opacity="0.45"/>
-    </filter>
-    <filter id="tile" x="-10%" y="-10%" width="120%" height="125%">
-      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.28"/>
-    </filter>
-  </defs>
+  <!-- Vibe Clip's app icon with macOS's margins: the glyph in white on a
+       rounded violet-to-pink tile. -->
+  <defs><linearGradient id="plate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="0.55" stop-color="#a855f7"/><stop offset="1" stop-color="#ec4899"/></linearGradient><linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.22"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/></linearGradient><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#2e1065" flood-opacity="0.45"/></filter><filter id="tile" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.28"/></filter></defs>
   <rect x="100" y="100" width="824" height="824" rx="190" fill="url(#plate)" filter="url(#tile)"/>
   <rect x="100" y="100" width="824" height="824" rx="190" fill="url(#sheen)"/>
-  <g transform="translate(212 212) scale(1.171875)" filter="url(#shadow)">
-    <g transform="translate(10 0)" fill="#fff" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M 238 136 L 238 376 L 430 256 Z" stroke-width="52"/>
-      <path d="M 102 178 H 168 M 54 256 H 168 M 102 334 H 168" stroke-width="42" fill="none"/>
-    </g>
-  </g>
+  <g transform="translate(212 217) scale(1.171875)" filter="url(#shadow)" fill="#fff" stroke="#fff"><path d="M 72 104 L 256 462 L 440 104" fill="none" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="118" r="48" stroke="none"/></g>
 </svg>
