@@ -13,15 +13,15 @@ Changed by phsrp, starting 9 November 2026 (every change is in this repository's
 - Removed saving clips by voice.
 - Removed share links (they upload to HasteClip's own server).
 - Discord activity shows Vibe Clip, through its own Discord application.
+- A new icon and save sound.
+- Themes: Default (HasteClip's look), Gruvbox and Rosé Pine, each in dark and light (Settings → App).
+- The editor can change the speed of each part of a clip (right-click a part → Speed), keeping voices' pitch.
+- Custom audio tracks like OBS's (Sources → Tracks): named, in your order, shared by any sources.
+- Overlays like OBS's image, text and browser sources, placed and sized on the preview, with transparency. Browser overlays are drawn by WebView2 (part of Windows), and their sound is a source of its own.
 
 Planned:
 
-- Themes: Default, Gruvbox and Rosé Pine, each in dark and light.
-- Change the speed of each part of a clip in the editor.
-- Recording to MKV.
-- Customisable audio tracks.
-- Browser, image and text sources (overlays), with sound from browser sources.
-- A new save sound.
+- Moving an existing clip library in.
 
 ## Building from source
 
