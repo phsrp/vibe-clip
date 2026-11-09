@@ -75,6 +75,6 @@ vpk pack `
     --mainExe vibe-clip.exe `
     --runtime win-x64 `
     --packTitle 'Vibe Clip' `
-    --packAuthors Kaillr `
+    --packAuthors phsrp `
     --icon crates\app\assets\icon.ico `
     --outputDir $out
