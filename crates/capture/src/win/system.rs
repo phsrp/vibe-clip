@@ -607,6 +607,60 @@ pub(crate) fn covers_display(hwnd: HWND) -> bool {
     }
 }
 
+/// What the window in focus is like (Vibe Clip), to tell a game no list
+/// knows by how it runs: see `crate::focus_facts`.
+pub fn focus_facts() -> Option<crate::FocusFacts> {
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_invalid() {
+            return None;
+        }
+        let mut pid = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == std::process::id() {
+            return None;
+        }
+        let path = image_path(pid)?;
+        let exe = std::path::Path::new(&path).file_name()?.to_string_lossy().into_owned();
+        let mut buf = [0u16; 512];
+        let n = InternalGetWindowText(hwnd, &mut buf).max(0) as usize;
+        let title = String::from_utf16_lossy(&buf[..n]).trim().to_owned();
+        let fills_screen = !window_minimized(hwnd) && covers_display(hwnd);
+        // Only looked into when it could be a game: listing a process's
+        // libraries takes a moment.
+        let draws_3d = if fills_screen { draws_3d(pid) } else { Some(false) };
+        Some(crate::FocusFacts { description: file_description(&path), path: path.into(), exe, title, fills_screen, draws_3d })
+    }
+}
+
+/// Whether a process has a 3D graphics library loaded (Direct3D 9 to 12,
+/// Vulkan, OpenGL), as games do; None when it can't be looked into (one
+/// running as administrator, or protected, as some anti-cheats keep games).
+fn draws_3d(pid: u32) -> Option<bool> {
+    use windows::Win32::System::Diagnostics::ToolHelp::{MODULEENTRY32W, Module32FirstW, Module32NextW, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32};
+    const GRAPHICS: [&str; 7] = ["d3d9.dll", "d3d10.dll", "d3d10_1.dll", "d3d11.dll", "d3d12.dll", "vulkan-1.dll", "opengl32.dll"];
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid).ok()?;
+        let mut entry = MODULEENTRY32W { dwSize: std::mem::size_of::<MODULEENTRY32W>() as u32, ..Default::default() };
+        let mut found = None;
+        if Module32FirstW(snap, &mut entry).is_ok() {
+            found = Some(false);
+            loop {
+                let name = from_wide(&entry.szModule).to_ascii_lowercase();
+                if GRAPHICS.contains(&name.as_str()) {
+                    found = Some(true);
+                    break;
+                }
+                if Module32NextW(snap, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snap);
+        found
+    }
+}
+
 /// A command for a helper program, run without a console window (this is a
 /// GUI app: each run would otherwise flash one).
 pub(crate) fn hidden_command(exe: &std::path::Path) -> std::process::Command {
@@ -763,5 +817,21 @@ pub fn app_icon(exe: &str, size: u32) -> Option<Vec<u8>> {
             }
         }
         Some(px)
+    }
+}
+
+#[cfg(test)]
+mod draws_3d_tests {
+    /// A process with no 3D graphics library loaded isn't taken for drawing 3D; once
+    /// Direct3D 11 is loaded, it is.
+    #[test]
+    fn sees_graphics_libraries() {
+        let pid = std::process::id();
+        let before = super::draws_3d(pid);
+        assert!(before.is_some(), "its own process can be looked into");
+        let name: Vec<u16> = "d3d11.dll".encode_utf16().chain([0]).collect();
+        let lib = unsafe { windows::Win32::System::LibraryLoader::LoadLibraryW(windows::core::PCWSTR(name.as_ptr())) };
+        assert!(lib.is_ok(), "Direct3D 11 loads");
+        assert_eq!(super::draws_3d(pid), Some(true));
     }
 }

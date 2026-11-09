@@ -257,6 +257,9 @@ pub(crate) enum Action {
     Kind(ShowKind),
     RenameFolder(String),
     RevealFolder(String),
+    /// A game found by how it runs isn't one (Vibe Clip): its clips go to
+    /// Desktop, and its app is never taken for a game again.
+    NotAGame(String),
     /// Ask for a name, then make a collection with these clips in it.
     NewCollection(Vec<PathBuf>),
     /// Put these clips in the collection, or take them out (`false`).
@@ -575,9 +578,46 @@ impl App {
     /// The game's picture for one of the library's folders, when Discord knows
     /// the game (also after the folder's been renamed).
     pub(crate) fn folder_icon(&mut self, ctx: &egui::Context, folder: &str) -> Option<egui::TextureHandle> {
-        let game = self.settings.game_folders.iter().find(|(_, f)| *f == folder).map_or(folder, |(game, _)| game.as_str());
-        let url = crate::discord::game_for_folder(game)?.icon?;
-        self.web_images.icon(ctx, &url)
+        let game = self.settings.game_folders.iter().find(|(_, f)| *f == folder).map_or(folder, |(game, _)| game.as_str()).to_owned();
+        if let Some(url) = crate::discord::game_for_folder(&game).and_then(|g| g.icon) {
+            return self.web_images.icon(ctx, &url);
+        }
+        // A game found by how it runs (Vibe Clip): its executable's icon,
+        // kept when it was found.
+        let exe = self.detected_exes(folder).into_iter().next()?;
+        let id = egui::Id::new(("detected_icon", exe.as_str()));
+        if let Some(tex) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+            return Some(tex);
+        }
+        let img = image::open(crate::games::icon_file(&exe)?).ok()?.to_rgba8();
+        let size = [img.width() as usize, img.height() as usize];
+        let tex = ctx.load_texture(format!("detected_icon_{exe}"), egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw()), egui::TextureOptions::LINEAR);
+        ctx.data_mut(|d| d.insert_temp(id, tex.clone()));
+        Some(tex)
+    }
+
+    /// The executables of the games found by how they run whose clips go in
+    /// this folder (Vibe Clip).
+    pub(crate) fn detected_exes(&self, folder: &str) -> Vec<String> {
+        let folder_of = |name: &str| self.settings.game_folders.get(name).cloned().unwrap_or_else(|| crate::clips::folder_name(name));
+        self.settings.detected_games.iter().filter(|(_, g)| folder_of(&g.name) == folder).map(|(exe, _)| exe.clone()).collect()
+    }
+
+    /// A game found by how it runs isn't one: its clips go to Desktop, and
+    /// its app is never taken for a game again.
+    pub(crate) fn not_a_game(&mut self, ctx: &egui::Context, folder: &str) {
+        for exe in self.detected_exes(folder) {
+            self.settings.detected_games.remove(&exe);
+            if !self.settings.not_games.contains(&exe) {
+                self.settings.not_games.push(exe);
+            }
+        }
+        let paths: Vec<PathBuf> = self.clips.iter().filter(|c| c.folder.as_deref() == Some(folder)).map(|c| c.path.clone()).collect();
+        if !paths.is_empty() {
+            self.move_clips(ctx, &paths, Some(crate::clips::DESKTOP.to_owned()));
+        }
+        self.library_filter = crate::library::Filter::All;
+        self.toast(format!("{folder} isn't taken for a game any more"));
     }
 
     /// Move clips to another folder of the library (`None`: the library

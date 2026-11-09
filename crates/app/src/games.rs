@@ -54,6 +54,14 @@ struct State {
     watching: bool,
     /// A game on the list was open at the last look.
     listed_open: bool,
+    /// Games found by how they run (Vibe Clip), by executable (lowercase):
+    /// their names. Remembered in the settings.
+    detected: HashMap<String, String>,
+    /// Apps that aren't games, though they ran like one (by executable).
+    not_games: std::collections::HashSet<String>,
+    /// Games just found, for the settings to remember: executable, name and
+    /// where it is.
+    found: Vec<(String, String, PathBuf)>,
 }
 
 /// What happened in the game in a clip, as it's saved.
@@ -180,8 +188,52 @@ impl Tracker {
     pub fn focused(&self) -> Option<(String, Game)> {
         let (id, path) = capture::foreground_app_path()?;
         let apps = self.state.lock().unwrap().apps.clone();
-        let game = identify(&id, &path, self.installed(&path), &apps)?;
+        let game = identify(&id, &path, self.installed(&path), &apps).or_else(|| self.guess(&id))?;
         Some((id, game))
+    }
+
+    /// The games found by how they run, and the apps that aren't games, as
+    /// the settings remember them (cheap when nothing changed).
+    pub fn set_detection(&self, detected: &std::collections::BTreeMap<String, crate::settings::DetectedGame>, not_games: &[String]) {
+        let mut s = self.state.lock().unwrap();
+        if s.detected.len() != detected.len() || detected.iter().any(|(exe, g)| s.detected.get(exe) != Some(&g.name)) {
+            s.detected = detected.iter().map(|(exe, g)| (exe.clone(), g.name.clone())).collect();
+        }
+        if s.not_games.len() != not_games.len() || not_games.iter().any(|n| !s.not_games.contains(n)) {
+            s.not_games = not_games.iter().cloned().collect();
+        }
+    }
+
+    /// Games found since last asked: executable, name, and where it is.
+    pub fn take_found(&self) -> Vec<(String, String, PathBuf)> {
+        std::mem::take(&mut self.state.lock().unwrap().found)
+    }
+
+    /// A game no list knows (Vibe Clip), told by how it runs: in focus, it
+    /// fills its screen and draws with 3D graphics (or can't be looked into,
+    /// as games kept safe by an anti-cheat can't), and it's no everyday app
+    /// (a browser or a player full screen) nor one said not to be a game.
+    /// Once found it's remembered, windowed too.
+    fn guess(&self, id: &str) -> Option<Game> {
+        let key = id.to_lowercase();
+        {
+            let s = self.state.lock().unwrap();
+            if let Some(name) = s.detected.get(&key) {
+                return Some(Game { name: name.clone(), icon: None });
+            }
+            if s.not_games.contains(&key) || everyday_app(&key) {
+                return None;
+            }
+        }
+        let facts = capture::focus_facts().filter(|f| f.exe.eq_ignore_ascii_case(id))?;
+        if !facts.fills_screen || facts.draws_3d == Some(false) {
+            return None;
+        }
+        let name = game_name(&facts);
+        let mut s = self.state.lock().unwrap();
+        s.detected.insert(key, name.clone());
+        s.found.push((facts.exe.clone(), name.clone(), facts.path.clone()));
+        Some(Game { name, icon: None })
     }
 
     /// [`installed_game`], read once per app.
@@ -258,6 +310,77 @@ fn identify(id: &str, path: &Path, by_place: Option<String>, apps: &[(String, St
         .or_else(|| apps.iter().find(|(a, _)| a.eq_ignore_ascii_case(id)).map(|(_, name)| Game { name: name.clone(), icon: None }))
 }
 
+/// Where a game found by how it runs keeps its icon (by executable).
+pub fn icon_file(exe: &str) -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("vibe-clip").join("game-icons").join(format!("{}.png", exe.to_lowercase())))
+}
+
+/// Keep the icon of a game just found (while it runs: only then is its
+/// executable's place known), on a thread of its own.
+pub fn keep_icon(exe: String) {
+    std::thread::spawn(move || {
+        let (Some(file), Some(rgba)) = (icon_file(&exe), capture::app_icon(&exe, 64)) else { return };
+        if let Some(dir) = file.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Err(e) = image::save_buffer(&file, &rgba, 64, 64, image::ColorType::Rgba8) {
+            eprintln!("games: couldn't keep {exe}'s icon: {e}");
+        }
+    });
+}
+
+/// Apps that fill the screen and draw with the graphics card without being
+/// games: browsers and players watched full screen, chat, launchers, the
+/// shell, editors and 3D tools (by executable, lowercase).
+fn everyday_app(exe: &str) -> bool {
+    const EVERYDAY: &[&str] = &[
+        // Browsers
+        "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "opera_gx.exe", "brave.exe", "vivaldi.exe", "arc.exe", "iexplore.exe", "librewolf.exe", "zen.exe", "floorp.exe", "waterfox.exe", "msedgewebview2.exe",
+        // Video and music
+        "vlc.exe", "mpc-hc64.exe", "mpc-hc.exe", "mpc-be64.exe", "potplayermini64.exe", "potplayermini.exe", "mpv.exe", "wmplayer.exe", "video.ui.exe", "microsoft.media.player.exe", "music.ui.exe", "spotify.exe", "netflix.exe", "plex.exe", "kodi.exe", "stremio.exe",
+        // Chat and calls
+        "discord.exe", "discordptb.exe", "discordcanary.exe", "slack.exe", "teams.exe", "ms-teams.exe", "zoom.exe", "telegram.exe", "whatsapp.exe", "signal.exe",
+        // Windows itself
+        "explorer.exe", "searchhost.exe", "startmenuexperiencehost.exe", "shellexperiencehost.exe", "applicationframehost.exe", "lockapp.exe", "textinputhost.exe", "taskmgr.exe", "mstsc.exe", "systemsettings.exe", "screenclippinghost.exe", "snippingtool.exe", "photos.exe", "microsoft.photos.exe", "dwm.exe", "magnify.exe",
+        // Launchers and stores (Steam's Big Picture is full screen)
+        "steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe", "battle.net.exe", "riotclientux.exe", "riotclientservices.exe", "galaxyclient.exe", "eadesktop.exe", "ubisoftconnect.exe", "upc.exe", "xboxpcapp.exe", "gamebar.exe", "playnite.desktopapp.exe", "playnite.fullscreenapp.exe", "heroic.exe", "itch.exe",
+        // Recording and streaming
+        "obs64.exe", "obs32.exe", "vibe-clip.exe", "vibe clip.exe", "hasteclip.exe", "medal.exe", "streamlabs obs.exe", "nvidia app.exe", "nvidia overlay.exe", "radeonsoftware.exe",
+        // Editing, office and 3D tools
+        "code.exe", "devenv.exe", "notepad.exe", "notepad++.exe", "idea64.exe", "rider64.exe", "pycharm64.exe", "blender.exe", "unity.exe", "unrealeditor.exe", "godot.exe", "photoshop.exe", "afterfx.exe", "adobe premiere pro.exe", "resolve.exe", "davinci resolve.exe", "kdenlive.exe", "vegas.exe", "gimp-2.10.exe", "krita.exe", "clipstudiopaint.exe", "figma.exe", "winword.exe", "excel.exe", "powerpnt.exe", "onenote.exe", "acrobat.exe", "acrord32.exe", "sumatrapdf.exe", "vmware.exe", "virtualboxvm.exe", "vmconnect.exe",
+    ];
+    EVERYDAY.contains(&exe)
+}
+
+/// What a game found by how it runs is called: its executable's
+/// description (what Task Manager shows), unless that says nothing (an
+/// engine's "UnityPlayer", "Game"); else its window's title; else its
+/// executable's name.
+fn game_name(f: &capture::FocusFacts) -> String {
+    let stem = f.exe.strip_suffix(".exe").or_else(|| f.exe.strip_suffix(".EXE")).unwrap_or(&f.exe).to_owned();
+    let tidy = |s: &str| {
+        let mut s = s.trim().to_owned();
+        for tail in [" (64-bit)", " (32-bit)", " (x64)", " (DirectX 11)", " (DirectX 12)", " (Vulkan)", "-Win64-Shipping", " Win64 Shipping", "-Shipping"] {
+            if let Some(t) = s.strip_suffix(tail) {
+                s = t.trim().to_owned();
+            }
+        }
+        s
+    };
+    let says_nothing = |s: &str| {
+        let l = s.to_lowercase();
+        l.len() < 2 || ["game", "launcher", "application", "app", "client", "main", "unityplayer", "unity player", "unity", "unreal engine", "godot engine", "player", "shipping"].contains(&l.as_str())
+    };
+    if let Some(d) = f.description.as_deref().map(tidy).filter(|d| !says_nothing(d)) {
+        return d;
+    }
+    let title = tidy(&f.title);
+    if !says_nothing(&title) && title.chars().count() <= 60 {
+        return title;
+    }
+    tidy(&stem)
+}
+
 /// Where a clip goes: the folder of its game (`None`: Desktop) in the
 /// library, or a folder it's been renamed to (`renamed`), or the library
 /// itself without folders per game.
@@ -293,6 +416,29 @@ pub fn installed_game(exe: &Path) -> Option<String> {
         return folder(i);
     }
     None
+}
+
+#[cfg(test)]
+mod guess_tests {
+    use super::*;
+
+    fn facts(exe: &str, description: Option<&str>, title: &str) -> capture::FocusFacts {
+        capture::FocusFacts { exe: exe.into(), path: PathBuf::from(exe), title: title.into(), description: description.map(Into::into), fills_screen: true, draws_3d: Some(true) }
+    }
+
+    #[test]
+    fn found_games_are_named_by_what_they_say() {
+        assert_eq!(game_name(&facts("hollow_knight.exe", Some("Hollow Knight"), "Hollow Knight")), "Hollow Knight");
+        assert_eq!(game_name(&facts("Game.exe", Some("UnityPlayer"), "Cozy Farm Days")), "Cozy Farm Days", "an engine's description says nothing");
+        assert_eq!(game_name(&facts("Bloop-Win64-Shipping.exe", None, "")), "Bloop", "the executable, tidied");
+        assert_eq!(game_name(&facts("x.exe", Some("Rally Racer (64-bit)"), "")), "Rally Racer");
+    }
+
+    #[test]
+    fn everyday_apps_are_not_games() {
+        assert!(everyday_app("chrome.exe") && everyday_app("vlc.exe") && everyday_app("blender.exe"));
+        assert!(!everyday_app("hollow_knight.exe"));
+    }
 }
 
 #[cfg(test)]

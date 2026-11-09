@@ -839,6 +839,37 @@ pub fn win_cursor_state() -> Option<(bool, usize)> {
     win::cursor_state()
 }
 
+/// The window in focus, as the app tells a game no list knows by how it
+/// runs (Vibe Clip): what it is, and whether it fills its screen and draws
+/// with 3D graphics, as games do.
+#[derive(Debug, Clone)]
+pub struct FocusFacts {
+    /// Its executable's file name (`Game.exe`) and full path.
+    pub exe: String,
+    pub path: PathBuf,
+    /// Its window's title.
+    pub title: String,
+    /// The executable's "File description" (what Task Manager shows).
+    pub description: Option<String>,
+    /// Its window covers all of its display (full screen or borderless).
+    pub fills_screen: bool,
+    /// A 3D graphics library is loaded (Direct3D, Vulkan, OpenGL); None when
+    /// it can't be looked into (protected, or run as administrator).
+    pub draws_3d: Option<bool>,
+}
+
+/// See [`FocusFacts`]. Windows only (elsewhere, None).
+pub fn focus_facts() -> Option<FocusFacts> {
+    #[cfg(target_os = "windows")]
+    {
+        win::focus_facts()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
 /// The app in focus: its id (as [`foreground_exe`]) and where it's installed,
 /// to tell a game by its folder (`…/steamapps/common/<game>/…`).
 pub fn foreground_app_path() -> Option<(String, PathBuf)> {

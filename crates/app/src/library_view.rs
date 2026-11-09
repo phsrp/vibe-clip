@@ -134,8 +134,9 @@ impl App {
                     let r = ui.add(egui::Label::new(theme::text(&title, 15.0, W::Semibold).color(theme::pal(ui).text)).sense(Sense::click()));
                     if let Filter::Collection(_) | Filter::Folder(_) = &app.library_filter {
                         let f = app.library_filter.clone();
+                        let detected = matches!(&f, Filter::Folder(name) if !app.detected_exes(name).is_empty());
                         ui_kit::context_menu(&r, 220.0, |ui| {
-                            if let Some(a) = view_menu(ui, &f) {
+                            if let Some(a) = view_menu(ui, &f, detected) {
                                 head_action = Some(a);
                             }
                         });
@@ -551,7 +552,8 @@ impl App {
         }
         if !matches!(view.filter, Filter::All) {
             let f = view.filter.clone();
-            if let Some(a) = ui_kit::context_menu(&resp, 220.0, |ui| view_menu(ui, &f)).flatten() {
+            let detected = matches!(&f, Filter::Folder(name) if !self.detected_exes(name).is_empty());
+            if let Some(a) = ui_kit::context_menu(&resp, 220.0, |ui| view_menu(ui, &f, detected)).flatten() {
                 action = Some(a);
             }
         }
@@ -1411,6 +1413,7 @@ impl App {
                 self.selection.clear();
             }
             Action::RenameFolder(name) => self.rename_folder(&name),
+            Action::NotAGame(name) => self.not_a_game(ctx, &name),
             Action::NewCollection(paths) => self.new_collection_with(paths),
             Action::InCollection(paths, id, add) => self.put_in_collection(&paths, &id, add),
             Action::RenameCollection(id) => self.rename_collection(id),
@@ -1710,12 +1713,16 @@ fn move_items(ui: &mut egui::Ui, folders: &[String], current: Option<&str>, offe
 }
 
 /// What can be done with a game's folder or a collection (right-click).
-fn view_menu(ui: &mut egui::Ui, filter: &Filter) -> Option<Action> {
+/// `detected`: the folder is a game found by how it runs (Vibe Clip).
+fn view_menu(ui: &mut egui::Ui, filter: &Filter, detected: bool) -> Option<Action> {
     let mut action = None;
     match filter {
         Filter::Folder(name) => {
             if Item::new(crate::reveal_label()).icon(icon::FOLDER_OPEN).show(ui).clicked() {
                 action = Some(Action::RevealFolder(name.clone()));
+            }
+            if detected && Item::new("Not a game").icon(icon::PROHIBIT).tip("It was taken for a game because it ran full screen with 3D graphics. Its clips go to Desktop, and it won't be taken for one again").show(ui).clicked() {
+                action = Some(Action::NotAGame(name.clone()));
             }
             let desktop = name == clips::DESKTOP;
             let mut item = Item::new("Rename folder…").icon(icon::PENCIL_SIMPLE).enabled(!desktop);

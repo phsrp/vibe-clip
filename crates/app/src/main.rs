@@ -1702,6 +1702,13 @@ impl App {
         self.follow_sessions();
         let capturing = games::Capturing { buffer: self.rec_state.clipping.then_some(self.settings.replay_seconds), record: self.rec_state.recording };
         self.games.set(capturing, &self.listed_apps());
+        // Games found by how they run (Vibe Clip): remembered, their icons kept.
+        self.games.set_detection(&self.settings.detected_games, &self.settings.not_games);
+        for (exe, name, path) in self.games.take_found() {
+            eprintln!("games: {exe} taken for a game, \"{name}\" (full screen, 3D graphics)");
+            self.settings.detected_games.insert(exe.to_lowercase(), settings::DetectedGame { name, path: path.to_string_lossy().into_owned() });
+            games::keep_icon(exe);
+        }
         self.games.events.set_options(self.settings.game_details.then(|| self.settings.game_titles.clone()));
         let armed = (self.rec_state.clipping && self.recording_shortcut.is_none()).then(|| service::Armed {
             library: self.settings.output_dir.clone(),

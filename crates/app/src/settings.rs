@@ -797,6 +797,16 @@ impl OverlayKind {
     }
 }
 
+/// A game found by how it runs (Vibe Clip): not on Discord's list or in a
+/// store's folder, but full screen and drawing 3D. Its name, and where its
+/// executable is (for its icon).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DetectedGame {
+    pub name: String,
+    #[serde(default)]
+    pub path: String,
+}
+
 /// The sound source of the browser overlays (Vibe Clip): an app source by
 /// this name, captured from their browser process.
 pub const BROWSER_SOUND: &str = capture::sources::BROWSER_APP;
@@ -1252,6 +1262,10 @@ pub struct RecordSettings {
     pub custom_tracks: Vec<CustomTrack>,
     /// Overlays (Vibe Clip), the first at the back.
     pub overlays: Vec<OverlayCfg>,
+    /// Games found by how they run (Vibe Clip), by executable (lowercase).
+    pub detected_games: std::collections::BTreeMap<String, DetectedGame>,
+    /// Apps that ran like a game but aren't (Not a game), by executable.
+    pub not_games: Vec<String>,
     /// Keep the clip's mix from clipping when sources add up too loud.
     pub limiter: bool,
     /// Record games Windows' own capture can't see properly (exclusive
@@ -1343,6 +1357,8 @@ impl Default for RecordSettings {
             custom_tracks_on: false,
             custom_tracks: Vec::new(),
             overlays: Vec::new(),
+            detected_games: Default::default(),
+            not_games: Vec::new(),
             limiter: true,
             game_capture: true,
             game_capture_allowed: Vec::new(),
