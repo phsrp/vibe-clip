@@ -851,8 +851,96 @@ pub(crate) struct Converter {
     video: ID3D11VideoContext,
     base: Layer,
     overlay: Option<(Layer, crate::webcam::SharedPlacement)>,
+    /// Overlays (Vibe Clip), drawn over everything else.
+    overlays: crate::overlay::SharedOverlays,
+    /// What drawing them takes: made the first time one shows (see
+    /// [`Composite`]), so a capture without overlays works as it always did.
+    composite: Mutex<Option<Composite>>,
+    composite_failed: AtomicBool,
+    /// What [`Composite`] is made from.
+    made_from: MadeFrom,
 }
 unsafe impl Send for Converter {}
+
+/// What a converter was made from, to make its [`Composite`] from.
+struct MadeFrom {
+    source: Arc<Latest>,
+    cam: Option<(Arc<Latest>, crate::webcam::SharedPlacement)>,
+    targets: Vec<ID3D11Texture2D>,
+    yuv: bool,
+    fps: u32,
+}
+
+/// Overlays (Vibe Clip) need their pictures blended by their transparency
+/// over the frame, which the video processor can't do (it writes its
+/// rectangle over what's there). So with overlays showing, the frame is made
+/// as always but into a picture of its own (`frame`, by `inner`), the
+/// overlays are drawn over that by their alpha, and `out` converts it into
+/// the targets (NV12 for the encoder, RGB for the preview).
+struct Composite {
+    frame: Arc<Latest>,
+    rtv: ID3D11RenderTargetView,
+    inner: Box<Converter>,
+    out: Layer,
+    quad: super::quad::Quad,
+    /// Each overlay's picture on the graphics card, by its id: the version
+    /// it holds, its size, the texture and its view.
+    textures: std::collections::HashMap<String, (u64, (u32, u32), ID3D11Texture2D, ID3D11ShaderResourceView)>,
+}
+
+impl Composite {
+    fn new(c: &Converter) -> Result<Self> {
+        let m = &c.made_from;
+        let frame = Latest::new(&c.gpu, c.width, c.height)?;
+        let mut rtv = None;
+        unsafe { c.gpu.device.CreateRenderTargetView(&frame.texture, None, Some(&mut rtv))? };
+        let cam = m.cam.as_ref().map(|(l, p)| (l, p.clone()));
+        let inner = Converter::new(&c.gpu, &m.source, cam, std::slice::from_ref(&frame.texture), false, c.width, c.height, m.fps, c.screen.clone())?;
+        let out = Layer::new(&c.gpu, &c.video, &frame, &m.targets, m.yuv, c.width, c.height, m.fps)?;
+        let quad = super::quad::Quad::new(&c.gpu)?;
+        Ok(Self { frame, rtv: rtv.context("no render target")?, inner: Box::new(inner), out, quad, textures: Default::default() })
+    }
+
+    /// Draw `o`'s picture `pic` over the frame (`size` pixels), by its alpha.
+    fn draw(&mut self, gpu: &Gpu, o: &crate::overlay::Overlay, pic: &crate::overlay::OverlayPicture, size: (u32, u32)) -> Result<()> {
+        let Some(dest) = crate::overlay::dest_px(o.rect, size.0, size.1) else { return Ok(()) };
+        let held = self.textures.get(&o.id).map(|t| (t.0, t.1));
+        if held.map(|h| h.0) != Some(pic.version) {
+            if held.map(|h| h.1) == Some((pic.width, pic.height)) {
+                // Same size: the new picture into the texture it has.
+                let t = self.textures.get_mut(&o.id).expect("held");
+                let _lock = gpu.exclusive();
+                unsafe { gpu.context.UpdateSubresource(&t.2, 0, None, pic.rgba.as_ptr().cast(), pic.width * 4, 0) };
+                t.0 = pic.version;
+            } else {
+                let desc = D3D11_TEXTURE2D_DESC {
+                    Width: pic.width,
+                    Height: pic.height,
+                    MipLevels: 1,
+                    ArraySize: 1,
+                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                    Usage: D3D11_USAGE_DEFAULT,
+                    BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+                    CPUAccessFlags: 0,
+                    MiscFlags: 0,
+                };
+                let data = D3D11_SUBRESOURCE_DATA { pSysMem: pic.rgba.as_ptr().cast(), SysMemPitch: pic.width * 4, SysMemSlicePitch: 0 };
+                let (mut tex, mut view) = (None, None);
+                unsafe {
+                    gpu.device.CreateTexture2D(&desc, Some(&data), Some(&mut tex))?;
+                    let tex = tex.as_ref().context("no texture")?;
+                    gpu.device.CreateShaderResourceView(tex, None, Some(&mut view))?;
+                }
+                self.textures.insert(o.id.clone(), (pic.version, (pic.width, pic.height), tex.context("no texture")?, view.context("no view")?));
+            }
+        }
+        let t = &self.textures[&o.id];
+        let clip = RECT { left: 0, top: 0, right: size.0 as i32, bottom: size.1 as i32 };
+        self.quad.draw(gpu, &self.rtv, size, &t.3, &super::quad::Placement { dest, uv: [0.0, 0.0, 1.0, 1.0], clip, turns: 0 }, false);
+        Ok(())
+    }
+}
 
 /// One picture drawn into the targets: its own video processor (with state for
 /// where it goes), reading `source`.
@@ -983,18 +1071,54 @@ impl Converter {
         fps: u32,
         screen: crate::SharedScreen,
     ) -> Result<Self> {
+        let overlays = crate::overlay::shared();
         let video: ID3D11VideoContext = gpu.context.cast()?;
         let base = Layer::new(gpu, &video, source, targets, yuv, width, height, fps)?;
+        let made_from = MadeFrom { source: source.clone(), cam: overlay.as_ref().map(|(l, p)| ((*l).clone(), p.clone())), targets: targets.to_vec(), yuv, fps };
         let overlay = match overlay {
             Some((cam, placement)) => Some((Layer::new(gpu, &video, cam, targets, yuv, width, height, fps)?, placement)),
             None => None,
         };
-        Ok(Self { gpu: gpu.clone(), width, height, screen, video, base, overlay })
+        Ok(Self { gpu: gpu.clone(), width, height, screen, video, base, overlay, overlays, composite: Mutex::new(None), composite_failed: AtomicBool::new(false), made_from })
     }
 
-    /// Convert the latest captured image (and the webcam over it, or under
-    /// it) into target `slot`.
+    /// Convert the latest captured image, the webcam over it (or under it)
+    /// and the overlays over everything (Vibe Clip), into target `slot`.
     pub(crate) fn convert(&self, slot: usize) -> Result<()> {
+        let list = self.overlays.lock().map(|l| l.clone()).unwrap_or_default();
+        let shown: Vec<(crate::overlay::Overlay, Arc<crate::overlay::OverlayPicture>)> =
+            list.into_iter().filter_map(|o| o.picture.lock().ok().and_then(|p| p.clone()).map(|p| (o, p))).collect();
+        if shown.is_empty() || self.composite_failed.load(Ordering::Relaxed) {
+            return self.convert_plain(slot);
+        }
+        let mut composite = self.composite.lock().unwrap();
+        if composite.is_none() {
+            match Composite::new(self) {
+                Ok(c) => *composite = Some(c),
+                Err(e) => {
+                    eprintln!("overlays can't be drawn: {e:#}");
+                    self.composite_failed.store(true, Ordering::Relaxed);
+                    return self.convert_plain(slot);
+                }
+            }
+        }
+        let c = composite.as_mut().expect("made");
+        c.inner.convert_plain(0)?;
+        c.frame.note_frame();
+        for (o, pic) in &shown {
+            if let Err(e) = c.draw(&self.gpu, o, pic, (self.width, self.height)) {
+                eprintln!("couldn't draw overlay {}: {e:#}", o.id);
+            }
+        }
+        c.textures.retain(|id, _| shown.iter().any(|(o, _)| o.id == *id));
+        let full = RECT { left: 0, top: 0, right: self.width as i32, bottom: self.height as i32 };
+        let drawn = c.out.draw(&self.video, slot, full, full, full, 0, (false, false)).context("couldn't convert a frame with its overlays");
+        unsafe { self.gpu.context.Flush() };
+        drawn
+    }
+
+    /// [`Self::convert`] without overlays: the picture and the webcam.
+    fn convert_plain(&self, slot: usize) -> Result<()> {
         let placed = *self.screen.lock().unwrap();
         let (cw, ch) = self.base.source.content();
         let rect = |[x, y, w, h]: [u32; 4]| RECT { left: x as i32, top: y as i32, right: (x + w) as i32, bottom: (y + h) as i32 };

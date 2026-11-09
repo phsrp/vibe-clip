@@ -725,6 +725,78 @@ pub struct AudioSourceCfg {
     pub tracks: Vec<String>,
 }
 
+/// An overlay (Vibe Clip): a picture over the recording, like OBS's image,
+/// text and browser sources, at a box of its own. Always in front of the
+/// screen and the webcam; the overlays in their list's order, the last in
+/// front.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OverlayCfg {
+    /// Stable: names it on the preview, on its card and to the capture.
+    pub key: u32,
+    pub name: String,
+    pub kind: OverlayKind,
+    #[serde(default = "yes")]
+    pub visible: bool,
+    /// Its box: left, top, width, height, as fractions of the video. None
+    /// until its picture is first made: then it's put in by its shape.
+    #[serde(default)]
+    pub rect: Option<[f32; 4]>,
+}
+
+/// What an overlay shows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OverlayKind {
+    /// An image file (PNG, JPG, WebP, BMP), transparency kept.
+    Image { path: String },
+    /// Text in the app's typeface: `size` is its height in pixels in a
+    /// 1080p video, `color` RGBA, with a dark outline that reads on anything.
+    Text {
+        text: String,
+        #[serde(default = "default_text_size")]
+        size: f32,
+        #[serde(default = "default_text_color")]
+        color: [u8; 4],
+        #[serde(default = "yes")]
+        outline: bool,
+    },
+    /// A web page, drawn `width`×`height` with a transparent background
+    /// (WebView2), its sound into the clip when `sound` is on.
+    Browser {
+        url: String,
+        #[serde(default = "default_page_width")]
+        width: u32,
+        #[serde(default = "default_page_height")]
+        height: u32,
+        #[serde(default = "yes")]
+        sound: bool,
+    },
+}
+
+fn default_text_size() -> f32 {
+    64.0
+}
+fn default_text_color() -> [u8; 4] {
+    [255, 255, 255, 255]
+}
+fn default_page_width() -> u32 {
+    800
+}
+fn default_page_height() -> u32 {
+    600
+}
+
+impl OverlayKind {
+    /// What it's called when added.
+    pub fn default_name(&self) -> String {
+        match self {
+            OverlayKind::Image { path } => std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Image".into()),
+            OverlayKind::Text { .. } => "Text".into(),
+            OverlayKind::Browser { .. } => "Browser".into(),
+        }
+    }
+}
+
 /// A custom audio track (Vibe Clip): like OBS's, any sources can share one,
 /// and a source can be in several. Their order is the file's.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1174,6 +1246,8 @@ pub struct RecordSettings {
     pub custom_tracks_on: bool,
     /// The custom tracks, in the file's order (after the mix).
     pub custom_tracks: Vec<CustomTrack>,
+    /// Overlays (Vibe Clip), the first at the back.
+    pub overlays: Vec<OverlayCfg>,
     /// Keep the clip's mix from clipping when sources add up too loud.
     pub limiter: bool,
     /// Record games Windows' own capture can't see properly (exclusive
@@ -1264,6 +1338,7 @@ impl Default for RecordSettings {
             audio_sources: default_sources(),
             custom_tracks_on: false,
             custom_tracks: Vec::new(),
+            overlays: Vec::new(),
             limiter: true,
             game_capture: true,
             game_capture_allowed: Vec::new(),

@@ -561,6 +561,9 @@ impl App {
         use egui::{pos2, vec2};
         let pal = theme::pal(ui);
         let aspect = frame.map_or(16.0 / 9.0, |f| f.width as f32 / f.height.max(1) as f32);
+        if frame.is_some() {
+            self.overlays.frame_aspect = Some(aspect);
+        }
         if self.settings.webcam.is_some() {
             self.webcam_fit_pending(ui.ctx(), aspect);
         }
