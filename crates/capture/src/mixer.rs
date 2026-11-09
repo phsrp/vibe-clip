@@ -950,6 +950,12 @@ pub(crate) struct MixInput {
     pub in_mix: bool,
     /// Its own track, if it has one.
     pub track: Option<Sender<Vec<f32>>>,
+    /// Custom tracks it goes into (Vibe Clip: OBS-style tracks several
+    /// sources can share), as indices into the mixer's shared tracks.
+    pub buses: Vec<usize>,
+    /// In the mix through a shared track that's part of the mix: not in the
+    /// rest track as well (see [`crate::sources::custom_layout`]).
+    pub covered: bool,
 }
 
 /// A change to the sources of a mixer that's running (see
@@ -1020,8 +1026,27 @@ pub(crate) fn spawn_changing_mixer(
     latency: f64,
     stop: Arc<AtomicBool>,
 ) -> JoinHandle<()> {
+    spawn_changing_mixer_with_buses(inputs, changes, mix_track, rest_track, Vec::new(), live, clock, now, latency, stop)
+}
+
+/// [`spawn_changing_mixer`] with shared tracks (Vibe Clip): each gets the sum
+/// of the sources that go into it (`MixInput::buses`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_changing_mixer_with_buses(
+    inputs: Vec<MixInput>,
+    changes: Receiver<MixChange>,
+    mix_track: Option<Sender<Vec<f32>>>,
+    rest_track: Option<Sender<Vec<f32>>>,
+    bus_tracks: Vec<Sender<Vec<f32>>>,
+    live: Arc<LiveAudio>,
+    clock: Arc<Clock>,
+    now: fn() -> f64,
+    latency: f64,
+    stop: Arc<AtomicBool>,
+) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut mixer = Mixing::new(inputs, mix_track, rest_track, live.clone(), latency);
+        mixer.bus_tracks = bus_tracks;
         loop {
             let tick = Instant::now();
             let stopping = stop.load(Ordering::Relaxed);
@@ -1054,6 +1079,8 @@ struct Mixing {
     parked: Vec<(String, Sender<Vec<f32>>)>,
     mix_track: Option<Sender<Vec<f32>>>,
     rest_track: Option<Sender<Vec<f32>>>,
+    /// Shared tracks (Vibe Clip), in the file's order after the own tracks.
+    bus_tracks: Vec<Sender<Vec<f32>>>,
     live: Arc<LiveAudio>,
     latency: f64,
     limiter: Limiter,
@@ -1091,6 +1118,7 @@ impl Mixing {
             parked: Vec::new(),
             mix_track,
             rest_track,
+            bus_tracks: Vec::new(),
             live,
             latency,
             limiter: Limiter::new(),
@@ -1198,6 +1226,7 @@ impl Mixing {
             let n = ((target - *from) as usize).min(RATE as usize / 50);
             let mut mix = vec![[0f32; 2]; n];
             let mut rest = vec![[0f32; 2]; if self.rest_track.is_some() { n } else { 0 }];
+            let mut buses = vec![vec![[0f32; 2]; n]; self.bus_tracks.len()];
             for input in &mut self.inputs {
                 let mut block = input.mix.feed.take(*from, n);
                 // Ramp to the new volume across the block so fader moves don't click.
@@ -1210,13 +1239,21 @@ impl Mixing {
                 input.gain = target_gain;
                 if input.mix.in_mix {
                     add(&mut mix, &block);
-                    if input.mix.track.is_none() {
+                    if input.mix.track.is_none() && !input.mix.covered {
                         add(&mut rest, &block);
+                    }
+                }
+                for &b in &input.mix.buses {
+                    if let Some(bus) = buses.get_mut(b) {
+                        add(bus, &block);
                     }
                 }
                 if let Some(tx) = &input.mix.track {
                     let _ = tx.send(interleave(&block));
                 }
+            }
+            for (tx, bus) in self.bus_tracks.iter().zip(&buses) {
+                let _ = tx.send(interleave(bus));
             }
             for (_, tx) in &self.parked {
                 let _ = tx.send(vec![0.0; n * 2]);
@@ -1733,7 +1770,7 @@ mod tests {
 
     /// A source of the clip's sound (unity gain), in or out of the mix.
     fn source(live: &LiveAudio, id: &str, feed: &Arc<SourceFeed>, track: Option<Sender<Vec<f32>>>) -> MixInput {
-        MixInput { id: id.into(), feed: feed.clone(), channel: live.channel(id), in_mix: true, track }
+        MixInput { id: id.into(), feed: feed.clone(), channel: live.channel(id), in_mix: true, track, buses: Vec::new(), covered: false }
     }
 
     /// Frame `at` seconds in.
@@ -1744,6 +1781,44 @@ mod tests {
     /// `seconds` of a steady level, as interleaved stereo.
     fn steady(level: f32, seconds: f64) -> Vec<f32> {
         vec![level; frame(seconds) * 2]
+    }
+
+    /// Shared tracks (Vibe Clip's custom tracks): each gets the sum of the
+    /// sources in it; a source can be in several; one covered by a shared
+    /// track isn't in the rest track too, one in the mix in none of them is.
+    #[test]
+    fn shared_tracks_sum_their_sources() {
+        let clock = clock_at_zero();
+        let live = LiveAudio::new();
+        live.set_limiter(false);
+        let (mix_tx, mix) = std::sync::mpsc::channel();
+        let (rest_tx, rest) = std::sync::mpsc::channel();
+        let (a_tx, track_a) = std::sync::mpsc::channel();
+        let (b_tx, track_b) = std::sync::mpsc::channel();
+        let (game, discord, mic, music) = (SourceFeed::new(RATE, clock.clone()), SourceFeed::new(RATE, clock.clone()), SourceFeed::new(RATE, clock.clone()), SourceFeed::new(RATE, clock.clone()));
+        let with = |id: &str, feed: &Arc<SourceFeed>, buses: Vec<usize>, covered: bool, in_mix: bool| MixInput { buses, covered, in_mix, ..source(&live, id, feed, None) };
+        let inputs = vec![
+            // Game and Discord share track A; the mic is on A and B, not in the mix;
+            // music is in the mix only.
+            with("game", &game, vec![0], true, true),
+            with("discord", &discord, vec![0], true, true),
+            with("mic", &mic, vec![0, 1], false, false),
+            with("music", &music, vec![], false, true),
+        ];
+        let mut mixer = Mixing::new(inputs, Some(mix_tx), Some(rest_tx), live.clone(), 0.25);
+        mixer.bus_tracks = vec![a_tx, b_tx];
+        game.push(1000.0, &steady(0.1, 1.0), 2);
+        discord.push(1000.0, &steady(0.2, 1.0), 2);
+        mic.push(1000.0, &steady(0.3, 1.0), 2);
+        music.push(1000.0, &steady(0.05, 1.0), 2);
+        mixer.mix(1.25, false);
+        let (mix, rest, a, b) = (frames(&mix), frames(&rest), frames(&track_a), frames(&track_b));
+        assert_eq!((mix.len(), rest.len(), a.len(), b.len()), (frame(1.0), frame(1.0), frame(1.0), frame(1.0)), "every track as long");
+        let near = |x: f32, y: f32| (x - y).abs() < 1e-6;
+        assert!(mix.iter().all(|f| near(f[0], 0.35)), "the mix: game, Discord and music, not the mic");
+        assert!(a.iter().all(|f| near(f[0], 0.6)), "track A: game, Discord and the mic");
+        assert!(b.iter().all(|f| near(f[0], 0.3)), "track B: the mic alone");
+        assert!(rest.iter().all(|f| near(f[0], 0.05)), "the rest: music, in the mix but in no clean track");
     }
 
     /// A source added while mixing (one added while recording, which has no

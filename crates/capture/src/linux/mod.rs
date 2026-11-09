@@ -1427,6 +1427,7 @@ mod tests {
             }),
             screen: Arc::new(Mutex::new(crate::ScreenPlacement::whole(crate::Framing::Fit))),
             sources: Vec::new(),
+            custom_tracks: Vec::new(),
             stream: None,
         };
         let cpu = || {

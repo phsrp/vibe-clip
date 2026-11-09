@@ -1363,6 +1363,9 @@ pub struct EncodeSettings {
     /// `in_mix` (so the file sounds right in any player); each source with
     /// `own_track` follows on its own track, for rebalancing later.
     pub sources: Vec<sources::AudioSource>,
+    /// Custom tracks (Vibe Clip), by name in the file's order: each source's
+    /// `buses` say which it goes into. Empty: HasteClip's own tracks.
+    pub custom_tracks: Vec<String>,
     /// Where to stream, and how: for [`Mode::Stream`].
     pub stream: Option<stream::StreamSettings>,
 }

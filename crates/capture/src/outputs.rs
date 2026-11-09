@@ -274,6 +274,7 @@ pub(crate) mod tests {
             webcam: None,
             screen: Arc::new(Mutex::new(crate::ScreenPlacement::whole(crate::Framing::Fit))),
             sources: Vec::new(),
+            custom_tracks: Vec::new(),
             stream: None,
         };
         let place = |name: &str, url: &str, short_side, fps, kbps| Destination { name: name.into(), url: url.into(), secret: "test_key".into(), quality: Quality { short_side: Some(short_side), fps, kbps } };

@@ -332,7 +332,8 @@ pub fn render_tag(edit: &Edit, id: Option<&str>) -> String {
 pub fn parse_clip_tag(comment: &str) -> ClipTag {
     // The older spelling of the tag (the first versions of this app, and the
     // clips imported from them) reads the same.
-    let Some(rest) = comment.strip_prefix("vibe-clip:").or_else(|| comment.strip_prefix(LEGACY_TAG)) else { return ClipTag::default() };
+    // HasteClip's own clips (Vibe Clip is based on it) say the same, under its name.
+    let Some(rest) = comment.strip_prefix("vibe-clip:").or_else(|| comment.strip_prefix("hasteclip:")).or_else(|| comment.strip_prefix(LEGACY_TAG)) else { return ClipTag::default() };
     let mut tag = ClipTag::default();
     for field in rest.split_whitespace() {
         if let Some(list) = field.strip_prefix("mix=") {
@@ -2302,6 +2303,7 @@ mod tests {
         assert_eq!(parse_clip_tag(&format!("{LEGACY_TAG}mix=1 id=ab12")), ClipTag { mix: Some(vec![1]), id: Some("ab12".into()) }, "the older spelling");
         assert_eq!(parse_clip_tag("vibe-clip:mix=1 id=ab12"), ClipTag { mix: Some(vec![1]), id: Some("ab12".into()) });
         assert_eq!(parse_clip_tag("vibe-clip:mix="), ClipTag { mix: Some(vec![]), id: None });
+        assert_eq!(parse_clip_tag("hasteclip:mix=1 id=ab12"), ClipTag { mix: Some(vec![1]), id: Some("ab12".into()) }, "HasteClip's clips too");
         assert_eq!(parse_clip_tag("made with something else"), ClipTag::default());
     }
 }

@@ -24,6 +24,7 @@ fn main() -> anyhow::Result<()> {
         webcam: None,
         screen: std::sync::Arc::new(std::sync::Mutex::new(capture::ScreenPlacement::whole(capture::Framing::Fill))),
         sources: Vec::new(),
+        custom_tracks: Vec::new(),
         stream: None,
     };
     crash_report();

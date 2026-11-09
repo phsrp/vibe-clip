@@ -641,7 +641,7 @@ mod tests {
         clock.set(crate::linux::host_now());
         let feed = SourceFeed::new(RATE, clock);
         let live = crate::mixer::LiveAudio::default();
-        let source = AudioSource { id: "mictest".into(), name: "Mic".into(), kind: SourceKind::Microphone { device: a.clone() }, in_mix: true, own_track: false };
+        let source = AudioSource { id: "mictest".into(), name: "Mic".into(), kind: SourceKind::Microphone { device: a.clone() }, in_mix: true, own_track: false, buses: Vec::new() };
         let mut audio = SystemAudio::start(vec![(source, feed.clone(), live.channel("mictest"))]).unwrap();
         let linked_to = || {
             let out = std::process::Command::new("pw-link").arg("-l").output().unwrap();

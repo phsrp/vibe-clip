@@ -1106,6 +1106,7 @@ impl App {
             })),
             screen: self.screen_placement.clone(),
             sources: self.capture_sources(),
+            custom_tracks: if self.settings.custom_tracks_on { self.settings.custom_tracks.iter().map(|t| t.name.clone()).collect() } else { Vec::new() },
             stream: self.stream_settings(),
         }
     }
@@ -1215,7 +1216,8 @@ impl App {
     pub(crate) fn capture_sources(&self) -> Vec<capture::sources::AudioSource> {
         use capture::sources::{AudioSource, SourceKind as Cap};
         let mut out: Vec<AudioSource> = Vec::new();
-        for s in self.settings.audio_sources.iter().filter(|s| s.enabled && (s.in_mix || s.own_track)) {
+        let custom = self.settings.custom_tracks_on && !self.settings.custom_tracks.is_empty();
+        for s in self.settings.audio_sources.iter().filter(|s| s.enabled && s.recorded(custom)) {
             let kind = match &s.kind {
                 SourceKind::Microphone { device } => match self.audio.resolve_input(device) {
                     Some(device) => Cap::Microphone { device },
@@ -1227,7 +1229,10 @@ impl App {
             if out.iter().any(|o| o.kind == kind) {
                 continue;
             }
-            out.push(AudioSource { id: s.id.clone(), name: s.name.clone(), kind, in_mix: s.in_mix, own_track: s.own_track });
+            // Custom tracks (Vibe Clip): the ones it's in, by their place.
+            let custom = self.settings.custom_tracks_on && !self.settings.custom_tracks.is_empty();
+            let buses = if custom { s.tracks.iter().filter_map(|id| self.settings.custom_tracks.iter().position(|t| t.id == *id)).collect() } else { Vec::new() };
+            out.push(AudioSource { id: s.id.clone(), name: s.name.clone(), kind, in_mix: s.in_mix, own_track: s.own_track && !custom, buses });
         }
         out
     }
@@ -2792,7 +2797,7 @@ impl App {
         self.settings
             .audio_sources
             .iter()
-            .filter(|s| s.enabled && (s.in_mix || s.own_track))
+            .filter(|s| s.enabled && s.recorded(self.settings.custom_tracks_on && !self.settings.custom_tracks.is_empty()))
             .filter_map(|s| resolved.iter().chain(&self.capturing_sources).find(|r| r.id == s.id).cloned())
             .collect()
     }

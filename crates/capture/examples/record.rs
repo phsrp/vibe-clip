@@ -38,6 +38,7 @@ default: {:?}", d.inputs.iter().map(|i| &i.name).collect::<Vec<_>>(), d.default_
                 kind,
                 in_mix: route != "track",
                 own_track: route != "mix",
+                buses: Vec::new(),
             }
         })
         .collect();
@@ -128,6 +129,7 @@ default: {:?}", d.inputs.iter().map(|i| &i.name).collect::<Vec<_>>(), d.default_
             capture::ScreenPlacement { rect: rect.unwrap_or([0.0, 0.0, 1.0, 1.0]), framing, in_front: env("SCREEN_FRONT").is_some(), hidden: env("SCREEN_OFF").is_some(), crop, ..capture::ScreenPlacement::whole(framing) }
         })),
         sources: sources.clone(),
+        custom_tracks: Vec::new(),
         stream: None,
     })?;
     let secs: u64 = std::env::var("SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(4);

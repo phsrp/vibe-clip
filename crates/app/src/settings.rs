@@ -720,6 +720,26 @@ pub struct AudioSourceCfg {
     /// From before there were two: on, which is Strong now. Read, not written.
     #[serde(default, skip_serializing, rename = "noise_removal")]
     old_noise_removal: bool,
+    /// With custom tracks on (Vibe Clip): the tracks it goes into, by id.
+    #[serde(default)]
+    pub tracks: Vec<String>,
+}
+
+/// A custom audio track (Vibe Clip): like OBS's, any sources can share one,
+/// and a source can be in several. Their order is the file's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomTrack {
+    pub id: String,
+    pub name: String,
+}
+
+/// At most this many custom tracks (OBS has 6).
+pub const MAX_CUSTOM_TRACKS: usize = 6;
+
+impl CustomTrack {
+    pub fn new(name: &str) -> Self {
+        Self { id: new_source_id().replacen("src", "trk", 1), name: name.to_owned() }
+    }
 }
 
 /// How the looks in a blended frame are weighed (see `capture::BlendShape`).
@@ -833,6 +853,12 @@ fn filled() -> Framing {
 }
 
 impl AudioSourceCfg {
+    /// Whether it's in the file at all: in the mix, or on a track (its own,
+    /// or with `custom` tracks, one of those).
+    pub fn recorded(&self, custom: bool) -> bool {
+        self.in_mix || if custom { !self.tracks.is_empty() } else { self.own_track }
+    }
+
     pub fn new(name: &str, kind: SourceKind) -> Self {
         Self {
             id: new_source_id(),
@@ -846,6 +872,7 @@ impl AudioSourceCfg {
             noise_reduction: NoiseReduction::Off,
             mono: false,
             old_noise_removal: false,
+            tracks: Vec::new(),
         }
     }
 }
@@ -1143,6 +1170,10 @@ pub struct RecordSettings {
 
     // --- Sources page ---
     pub audio_sources: Vec<AudioSourceCfg>,
+    /// Custom audio tracks instead of one per source (Vibe Clip, like OBS).
+    pub custom_tracks_on: bool,
+    /// The custom tracks, in the file's order (after the mix).
+    pub custom_tracks: Vec<CustomTrack>,
     /// Keep the clip's mix from clipping when sources add up too loud.
     pub limiter: bool,
     /// Record games Windows' own capture can't see properly (exclusive
@@ -1231,6 +1262,8 @@ impl Default for RecordSettings {
             setup_shown: 0,
             game_titles: GameTitles::default(),
             audio_sources: default_sources(),
+            custom_tracks_on: false,
+            custom_tracks: Vec::new(),
             limiter: true,
             game_capture: true,
             game_capture_allowed: Vec::new(),

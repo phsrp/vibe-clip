@@ -573,6 +573,7 @@ mod tests {
             kind: SourceKind::Desktop { exclude_app_sources: false },
             in_mix: true,
             own_track: false,
+            buses: Vec::new(),
         };
         let mut taps = vec![Tap::new(source, SourceFeed::new(RATE, Arc::new(Clock::default())), live.channel("desktop"))];
         sync_taps(&mut taps, start);
@@ -591,7 +592,7 @@ mod tests {
     }
 
     fn app(id: &str, exe: &str) -> AudioSource {
-        AudioSource { id: id.into(), name: id.into(), kind: SourceKind::App { bundle_id: exe.into() }, in_mix: true, own_track: false }
+        AudioSource { id: id.into(), name: id.into(), kind: SourceKind::App { bundle_id: exe.into() }, in_mix: true, own_track: false, buses: Vec::new() }
     }
 
     /// A source taken out while capturing stops its streams (what they had

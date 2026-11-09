@@ -256,11 +256,92 @@ impl App {
     fn sound_head(&mut self, ui: &mut egui::Ui) {
         use crate::ui_kit::Btn;
         column_head(ui, "Sound", |ui| {
+            let custom = self.settings.custom_tracks_on && !self.settings.custom_tracks.is_empty();
+            let label = if custom { format!("Tracks: {}", self.settings.custom_tracks.len()) } else { "Tracks".to_owned() };
+            let tracks = Btn::ghost(label).with_icon(egui_phosphor::regular::ROWS).trail(egui_phosphor::regular::CARET_DOWN).small().id("tracks_btn").tip("Audio tracks: one per source, or your own like OBS's").show(ui);
+            crate::ui_kit::panel_popup(&tracks, false, 330.0, |ui| self.tracks_panel(ui));
             if Btn::ghost("Refresh").with_icon(egui_phosphor::regular::ARROWS_CLOCKWISE).small().tip("Look again for microphones you've plugged in").show(ui).clicked() {
                 self.refresh_audio_devices();
                 self.toast_icon(egui_phosphor::regular::ARROWS_CLOCKWISE, "Looked for microphones again");
             }
         });
+    }
+
+    /// The audio tracks (Vibe Clip): HasteClip's one per source, or custom
+    /// tracks like OBS's, named and in order, any sources sharing one.
+    fn tracks_panel(&mut self, ui: &mut egui::Ui) {
+        use crate::settings::{CustomTrack, MAX_CUSTOM_TRACKS};
+        use crate::theme::{self, W};
+        use crate::ui_kit::Btn;
+        use egui_phosphor::regular as icon;
+        let pal = theme::pal(ui);
+        let locked = !self.rec_state.idle();
+        ui.add_enabled_ui(!locked, |ui| {
+            ui.horizontal(|ui| {
+                let was = self.settings.custom_tracks_on;
+                labelled_switch(ui, &mut self.settings.custom_tracks_on, "Custom tracks", "");
+                crate::ui_kit::info(ui, "Custom tracks", "Like OBS: name your own tracks, put them in order, and pick which sources go into each. Sources can share a track (the game and Discord on one), and a source can be on several. Track 1 is always the clip's mix. Off: each source can have a track of its own.");
+                // Turned on for the first time: a track for each source that has
+                // its own now, so nothing changes until you change it.
+                if self.settings.custom_tracks_on && !was && self.settings.custom_tracks.is_empty() {
+                    for s in self.settings.audio_sources.iter_mut().filter(|s| s.own_track) {
+                        if self.settings.custom_tracks.len() < MAX_CUSTOM_TRACKS {
+                            let t = CustomTrack::new(&s.name);
+                            s.tracks = vec![t.id.clone()];
+                            self.settings.custom_tracks.push(t);
+                        }
+                    }
+                }
+            });
+            if !self.settings.custom_tracks_on {
+                ui.add_space(4.0);
+                ui.label(theme::text("Each source chooses whether it has a track of its own, in its “Where it goes” menu.", 12.5, W::Regular).color(pal.text3));
+                return;
+            }
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(theme::text("1", 13.0, W::Medium).color(pal.text3));
+                ui.label(theme::text("Mix: the clip's sound, always first", 13.0, W::Regular).color(pal.text2));
+            });
+            let n = self.settings.custom_tracks.len();
+            let mut swap = None;
+            let mut remove = None;
+            for i in 0..n {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.label(theme::text(format!("{}", i + 2), 13.0, W::Medium).color(pal.text3));
+                    ui.allocate_ui(egui::vec2(170.0, 30.0), |ui| crate::ui_kit::text_field(ui, &mut self.settings.custom_tracks[i].name, "Track name"));
+                    if Btn::icon(crate::ui_kit::Kind::Ghost, icon::ARROW_UP).small().enabled(i > 0).tip("Earlier in the file").show(ui).clicked() {
+                        swap = Some((i, i - 1));
+                    }
+                    if Btn::icon(crate::ui_kit::Kind::Ghost, icon::ARROW_DOWN).small().enabled(i + 1 < n).tip("Later in the file").show(ui).clicked() {
+                        swap = Some((i, i + 1));
+                    }
+                    if Btn::icon(crate::ui_kit::Kind::Ghost, icon::X).small().tip("Remove this track").show(ui).clicked() {
+                        remove = Some(i);
+                    }
+                });
+            }
+            if let Some((a, b)) = swap {
+                self.settings.custom_tracks.swap(a, b);
+            }
+            if let Some(i) = remove {
+                let gone = self.settings.custom_tracks.remove(i).id;
+                self.settings.audio_sources.iter_mut().for_each(|s| s.tracks.retain(|t| *t != gone));
+            }
+            ui.add_space(4.0);
+            let more = self.settings.custom_tracks.len() < MAX_CUSTOM_TRACKS;
+            if Btn::ghost("Add track").with_icon(icon::PLUS).small().enabled(more).tip(if more { "A new track, empty until sources go into it" } else { "6 tracks at most" }).show(ui).clicked() {
+                let name = format!("Track {}", self.settings.custom_tracks.len() + 2);
+                self.settings.custom_tracks.push(CustomTrack::new(&name));
+            }
+            ui.add_space(4.0);
+            ui.label(theme::text("Pick each source's tracks in its “Where it goes” menu.", 12.5, W::Regular).color(pal.text3));
+        });
+        if locked {
+            ui.label(theme::text("Stop clipping and recording to change the tracks: a file's tracks are set as it starts.", 12.5, W::Regular).color(pal.warn));
+        }
     }
 
     /// What you hear (under `sound_head`): the clip's mix, then each
@@ -285,7 +366,8 @@ impl App {
             meters.input.update(channel.input.take(), now, dt);
             meters.output.update(channel.meter.take(), now, dt);
             let listening = self.listening.as_ref().filter(|l| l.source == id_for_listen).map(|l| l.monitor.latency_ms());
-            let action = source_card(ui, &mut self.settings.audio_sources[i], &channel, meters, &self.audio, has_app_sources, &mut self.sources_view.renaming, listening, locked.as_deref(), note, i == 0, &mut self.app_icons);
+            let custom = (self.settings.custom_tracks_on && !self.settings.custom_tracks.is_empty()).then_some(&self.settings.custom_tracks[..]);
+            let action = source_card(ui, &mut self.settings.audio_sources[i], &channel, meters, &self.audio, has_app_sources, &mut self.sources_view.renaming, listening, locked.as_deref(), note, i == 0, &mut self.app_icons, custom);
             match action {
                 CardAction::Remove => remove = Some(i),
                 CardAction::MoveUp if i > 0 => move_up = Some(i),
@@ -1807,6 +1889,8 @@ fn source_card(
     note: Option<(String, bool)>,
     first: bool,
     app_icons: &mut crate::app_icons::AppIcons,
+    // Custom tracks (Vibe Clip), when they're on: where it goes is picked from these.
+    custom: Option<&[crate::settings::CustomTrack]>,
 ) -> CardAction {
     use crate::theme::{self, W};
     use crate::ui_kit::{Btn, Item, Kind};
@@ -1937,26 +2021,61 @@ fn source_card(
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            let route = Route::of(source);
-            let chip = Btn::normal(route.label()).trail(icon::CARET_DOWN).small().id(("route", source.id.as_str())).tip(locked.unwrap_or("Where this source goes")).show(ui);
-            if chip.clicked() && locked.is_some() {
-                action = CardAction::Locked;
-                egui::Popup::close_id(ui.ctx(), chip.id.with("menu"));
-            }
-            if locked.is_none() {
-                crate::ui_kit::menu_popup(&chip, true, 260.0, |ui| {
-                    for r in [Route::Both, Route::Mix, Route::Track] {
-                        if Item::new(r.label()).check(route == r).tip(r.tip()).show(ui).clicked() {
-                            (source.in_mix, source.own_track) = match r {
-                                Route::Both => (true, true),
-                                Route::Mix => (true, false),
-                                Route::Track => (false, true),
-                            };
+            // Custom tracks (Vibe Clip): the clip sound, and any of the tracks.
+            if let Some(tracks) = custom {
+                let mut parts: Vec<&str> = Vec::new();
+                if source.in_mix {
+                    parts.push("Clip sound");
+                }
+                parts.extend(tracks.iter().filter(|t| source.tracks.contains(&t.id)).map(|t| t.name.as_str()));
+                let label = if parts.is_empty() { "Not recorded".to_owned() } else { parts.join(" + ") };
+                let chip = Btn::normal(label).trail(icon::CARET_DOWN).small().id(("route", source.id.as_str())).tip(locked.unwrap_or("Where this source goes: the clip sound, and which tracks")).show(ui);
+                if chip.clicked() && locked.is_some() {
+                    action = CardAction::Locked;
+                    egui::Popup::close_id(ui.ctx(), chip.id.with("menu"));
+                }
+                if locked.is_none() {
+                    crate::ui_kit::panel_popup(&chip, true, 240.0, |ui| {
+                        if Item::new("Clip sound").check(source.in_mix).tip("Heard in the clip (track 1, the mix)").show(ui).clicked() {
+                            source.in_mix = !source.in_mix;
                         }
-                    }
-                });
+                        crate::ui_kit::menu_sep(ui);
+                        crate::ui_kit::menu_head(ui, "Tracks");
+                        for (k, t) in tracks.iter().enumerate() {
+                            let on = source.tracks.contains(&t.id);
+                            if Item::new(format!("{}  {}", k + 2, t.name)).check(on).show(ui).clicked() {
+                                if on {
+                                    source.tracks.retain(|x| *x != t.id);
+                                } else {
+                                    source.tracks.push(t.id.clone());
+                                }
+                            }
+                        }
+                    });
+                }
+                crate::ui_kit::info(ui, "Where it goes", "Clip sound: part of what everyone hears when you play or share a clip (track 1). Tracks: also on those, shared with the other sources there, to rebalance later in the editor or another program.");
+            } else {
+                let route = Route::of(source);
+                let chip = Btn::normal(route.label()).trail(icon::CARET_DOWN).small().id(("route", source.id.as_str())).tip(locked.unwrap_or("Where this source goes")).show(ui);
+                if chip.clicked() && locked.is_some() {
+                    action = CardAction::Locked;
+                    egui::Popup::close_id(ui.ctx(), chip.id.with("menu"));
+                }
+                if locked.is_none() {
+                    crate::ui_kit::menu_popup(&chip, true, 260.0, |ui| {
+                        for r in [Route::Both, Route::Mix, Route::Track] {
+                            if Item::new(r.label()).check(route == r).tip(r.tip()).show(ui).clicked() {
+                                (source.in_mix, source.own_track) = match r {
+                                    Route::Both => (true, true),
+                                    Route::Mix => (true, false),
+                                    Route::Track => (false, true),
+                                };
+                            }
+                        }
+                    });
+                }
+                crate::ui_kit::info(ui, "Where it goes", "Clip sound: part of what everyone hears when you play or share a clip. Own track: also kept on its own, so you can change its volume later in the editor.");
             }
-            crate::ui_kit::info(ui, "Where it goes", "Clip sound: part of what everyone hears when you play or share a clip. Own track: also kept on its own, so you can change its volume later in the editor.");
             if matches!(source.kind, SourceKind::Microphone { .. }) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Listen: something you do for a moment, so a button, with
@@ -2368,7 +2487,7 @@ mod tests {
     /// A source a capture started with.
     fn started(id: &str, in_mix: bool, own_track: bool) -> capture::sources::AudioSource {
         let kind = capture::sources::SourceKind::Desktop { exclude_app_sources: true };
-        capture::sources::AudioSource { id: id.to_owned(), name: id.to_owned(), kind, in_mix, own_track }
+        capture::sources::AudioSource { id: id.to_owned(), name: id.to_owned(), kind, in_mix, own_track, buses: Vec::new() }
     }
 
     /// A source added since.

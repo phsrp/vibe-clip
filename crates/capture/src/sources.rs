@@ -49,6 +49,10 @@ pub struct AudioSource {
     pub in_mix: bool,
     /// Also recorded alone on its own track, for rebalancing in the editor.
     pub own_track: bool,
+    /// With custom tracks (Vibe Clip, `EncodeSettings::custom_tracks`): the
+    /// tracks it goes into, by their place in that list. `own_track` is
+    /// left out then.
+    pub buses: Vec<usize>,
 }
 
 /// Tag stored on recordings listing which audio streams are part of the mix
@@ -83,6 +87,48 @@ pub fn track_layout(sources: &[AudioSource]) -> (Vec<String>, String, bool) {
         titles.push(REST_TRACK.to_owned());
     }
     (titles, format!("{MIX_TAG_PREFIX}{}", in_mix.join(",")), rest)
+}
+
+/// The tracks of a file with custom tracks (Vibe Clip): the mix, then the
+/// custom tracks in their order, then (if needed) a rest track.
+pub struct CustomLayout {
+    pub titles: Vec<String>,
+    /// The [`MIX_TAG_PREFIX`] comment: the tracks that add up to the mix.
+    pub comment: String,
+    pub has_rest: bool,
+    /// Per custom track: it holds only sources in the mix, none of them in
+    /// an earlier such track, so it's one of the tracks the mix is made of.
+    pub clean: Vec<bool>,
+    /// Per source: in the mix through a clean track (so not in the rest).
+    pub covered: Vec<bool>,
+}
+
+/// The track layout with custom tracks: track 1 is the mix, then each custom
+/// track (any sources can share one, a source can be in several), then a rest
+/// track with the sources in the mix that no clean track holds. The tracks
+/// listed in the comment always add up to the mix, so the editor can rebuild
+/// it: a custom track holding a source that isn't in the mix, or one that's
+/// already counted, is kept out of that list (it's still in the file).
+pub fn custom_layout(sources: &[AudioSource], names: &[String]) -> CustomLayout {
+    let mut titles = vec!["Mix".to_owned()];
+    titles.extend(names.iter().cloned());
+    let mut covered = vec![false; sources.len()];
+    let mut clean = vec![false; names.len()];
+    let mut in_mix = Vec::new();
+    for (b, ok) in clean.iter_mut().enumerate() {
+        let members: Vec<usize> = (0..sources.len()).filter(|&i| sources[i].buses.contains(&b)).collect();
+        *ok = !members.is_empty() && members.iter().all(|&i| sources[i].in_mix && !covered[i]);
+        if *ok {
+            members.iter().for_each(|&i| covered[i] = true);
+            in_mix.push((b + 1).to_string());
+        }
+    }
+    let has_rest = sources.iter().zip(&covered).any(|(s, c)| s.in_mix && !c);
+    if has_rest {
+        in_mix.push(titles.len().to_string());
+        titles.push(REST_TRACK.to_owned());
+    }
+    CustomLayout { titles, comment: format!("{MIX_TAG_PREFIX}{}", in_mix.join(",")), has_rest, clean, covered }
 }
 
 /// Live capture of a set of sources, each feeding its own [`SourceFeed`].
@@ -1040,6 +1086,8 @@ pub(crate) fn mix_inputs(
             channel: live.channel(&s.id),
             in_mix: s.in_mix,
             track: if s.own_track { track_for(s) } else { None },
+            buses: Vec::new(),
+            covered: false,
         })
         .collect()
 }
@@ -1072,6 +1120,28 @@ pub(crate) fn host_now() -> f64 {
 mod tests {
     use super::*;
 
+    /// Custom tracks (Vibe Clip): shared, in their order; the mix tag lists
+    /// only tracks that add up to the mix, with a rest track for the others.
+    #[test]
+    fn custom_tracks() {
+        let with = |name: &str, in_mix: bool, buses: &[usize]| AudioSource { buses: buses.to_vec(), ..src(name, in_mix, false) };
+        let names = ["Game + Discord".to_owned(), "Mic".to_owned()];
+        // Game and Discord share a track, the mic has one: no rest needed.
+        let l = custom_layout(&[with("Game", true, &[0]), with("Discord", true, &[0]), with("Mic", true, &[1])], &names);
+        assert_eq!(l.titles, ["Mix", "Game + Discord", "Mic"]);
+        assert_eq!(l.comment, format!("{MIX_TAG_PREFIX}1,2"));
+        assert!(!l.has_rest);
+        // Music in the mix but in no track: the rest track. The mic only on
+        // its track (not in the mix): that track isn't one of the mix's.
+        let l = custom_layout(&[with("Game", true, &[0]), with("Music", true, &[]), with("Mic", false, &[1])], &names);
+        assert_eq!(l.titles, ["Mix", "Game + Discord", "Mic", REST_TRACK]);
+        assert_eq!(l.comment, format!("{MIX_TAG_PREFIX}1,3"));
+        assert_eq!(l.covered, [true, false, false]);
+        // A source on both tracks: counted once, the second track left out.
+        let l = custom_layout(&[with("Game", true, &[0, 1])], &names);
+        assert_eq!((l.clean.clone(), l.comment), (vec![true, false], format!("{MIX_TAG_PREFIX}1")));
+    }
+
     fn src(name: &str, in_mix: bool, own_track: bool) -> AudioSource {
         AudioSource {
             id: name.into(),
@@ -1079,6 +1149,7 @@ mod tests {
             kind: SourceKind::Desktop { exclude_app_sources: false },
             in_mix,
             own_track,
+            buses: Vec::new(),
         }
     }
 

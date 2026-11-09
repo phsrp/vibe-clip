@@ -1319,6 +1319,21 @@ pub fn menu_popup<R>(resp: &Response, left: bool, width: f32, content: impl FnOn
         .map(|r| r.inner)
 }
 
+/// [`menu_popup`] that stays open while it's clicked in (it has switches or
+/// fields to use more than once), closing on a click outside it.
+pub fn panel_popup<R>(resp: &Response, left: bool, width: f32, content: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
+    let ui_frame = menu_frame_ctx(&resp.ctx);
+    egui::Popup::menu(resp)
+        .id(resp.id.with("menu"))
+        .gap(6.0)
+        .align(if left { egui::RectAlign::BOTTOM_START } else { egui::RectAlign::BOTTOM_END })
+        .frame(ui_frame)
+        .style(menu_style)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| menu_body(ui, menu_floor(width).max(resp.rect.width() - 12.0), content))
+        .map(|r| r.inner)
+}
+
 /// A right-click menu on `resp`, at the pointer.
 pub fn context_menu<R>(resp: &Response, width: f32, content: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
     let frame = menu_frame_ctx(&resp.ctx);

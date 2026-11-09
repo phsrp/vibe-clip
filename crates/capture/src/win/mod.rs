@@ -182,6 +182,9 @@ struct Session {
     mixer: Option<(Arc<AtomicBool>, JoinHandle<()>)>,
     /// The sources added and taken out while it runs, for the mixer.
     mix_changes: Option<Sender<MixChange>>,
+    /// With custom tracks (Vibe Clip): how many, and which add up to the
+    /// mix (`CustomLayout::clean`), for sources added while it runs.
+    custom_clean: Option<Vec<bool>>,
     /// AAC encoder threads, one per track; they end when the mixer drops its senders.
     encoders: Vec<JoinHandle<()>>,
     writer_tx: Sender<writer::Command>,
@@ -371,7 +374,12 @@ impl Session {
         let (width, height) = s.size.of(canvas_w, canvas_h);
         let clock = Arc::new(Clock::default());
 
-        let (titles, comment, has_rest) = track_layout(&s.sources);
+        // Custom tracks (Vibe Clip), or HasteClip's own: one per source.
+        let custom = (!s.custom_tracks.is_empty()).then(|| crate::sources::custom_layout(&s.sources, &s.custom_tracks));
+        let (titles, comment, has_rest) = match &custom {
+            Some(c) => (c.titles.clone(), c.comment.clone(), c.has_rest),
+            None => track_layout(&s.sources),
+        };
         let aac: Vec<AacEncoder> = titles.iter().map(|_| AacEncoder::new(AUDIO_BITRATE)).collect::<Result<_>>()?;
         let layout = Layout {
             spec: Spec { width, height, fps: s.fps, audio_titles: titles, audio_bitrate: AUDIO_BITRATE, comment, mov, reorder: 0 },
@@ -387,6 +395,7 @@ impl Session {
             audio: None,
             mixer: None,
             mix_changes: None,
+            custom_clean: custom.as_ref().map(|c| c.clean.clone()),
             encoders: Vec::new(),
             writer_tx,
             writer: Some(writer),
@@ -408,17 +417,30 @@ impl Session {
             let mut tracks = pcm_senders.into_iter();
             let mix_track = tracks.next();
             let audio = AudioCapture::start(&s.sources, live, clock.clone())?;
-            let inputs = mix_inputs(&s.sources, &audio.feeds, live, |_| tracks.next());
+            let (inputs, bus_tracks) = match &custom {
+                None => (mix_inputs(&s.sources, &audio.feeds, live, |_| tracks.next()), Vec::new()),
+                // The custom tracks, then each source into the ones it's in.
+                Some(c) => {
+                    let buses: Vec<_> = (0..s.custom_tracks.len()).filter_map(|_| tracks.next()).collect();
+                    let mut inputs = mix_inputs(&s.sources, &audio.feeds, live, |_| None);
+                    for (i, input) in inputs.iter_mut().enumerate() {
+                        input.buses = s.sources[i].buses.iter().copied().filter(|&b| b < buses.len()).collect();
+                        input.covered = c.covered[i];
+                    }
+                    (inputs, buses)
+                }
+            };
             let rest_track = if has_rest { tracks.next() } else { None };
             session.audio = Some(audio);
             let stop = Arc::new(AtomicBool::new(false));
             let (mix_changes, changes) = mpsc::channel();
             session.mix_changes = Some(mix_changes);
-            let mixer = mixer::spawn_changing_mixer(
+            let mixer = mixer::spawn_changing_mixer_with_buses(
                 inputs,
                 changes,
                 mix_track,
                 rest_track,
+                bus_tracks,
                 live.clone(),
                 clock.clone(),
                 host_now,
@@ -584,7 +606,17 @@ impl Session {
         }
         for (source, feed) in added {
             eprintln!("audio source \"{}\": added while capturing, into the mix", source.name);
-            let input = MixInput { channel: live.channel(&source.id), id: source.id, feed, in_mix: source.in_mix, track: None };
+            // Custom tracks: into its tracks. Not in the mix, it stays out of
+            // those that make the mix up (the file says they add up to it).
+            let (buses, covered) = match &self.custom_clean {
+                Some(clean) => {
+                    let buses: Vec<usize> = source.buses.iter().copied().filter(|&b| clean.get(b).is_some_and(|&c| source.in_mix || !c)).collect();
+                    let covered = source.in_mix && buses.iter().any(|&b| clean[b]);
+                    (buses, covered)
+                }
+                None => (Vec::new(), false),
+            };
+            let input = MixInput { channel: live.channel(&source.id), id: source.id, feed, in_mix: source.in_mix, track: None, buses, covered };
             let _ = changes.send(MixChange::Add(input));
         }
         true
@@ -2432,6 +2464,7 @@ mod tests {
             webcam: None,
             screen: Arc::new(std::sync::Mutex::new(crate::ScreenPlacement::whole(crate::Framing::Fit))),
             sources: Vec::new(),
+            custom_tracks: Vec::new(),
             stream: None,
         };
         let place = |name: &str, url: &str, short_side, fps, kbps| Destination { name: name.into(), url: url.into(), secret: "test_key".into(), quality: crate::stream::Quality { short_side: Some(short_side), fps, kbps } };
@@ -2507,6 +2540,7 @@ mod tests {
             webcam: None,
             screen: Arc::new(std::sync::Mutex::new(crate::ScreenPlacement::whole(crate::Framing::Fill))),
             sources: Vec::new(),
+            custom_tracks: Vec::new(),
             stream: None,
         };
         let mut rec = WinRecorder::new(Arc::new(LiveAudio::default()));
@@ -2641,6 +2675,7 @@ mod tests {
             webcam: None,
             screen: Arc::new(std::sync::Mutex::new(crate::ScreenPlacement::whole(crate::Framing::Fit))),
             sources: Vec::new(),
+            custom_tracks: Vec::new(),
             stream: None,
         };
         unsafe { windows::Win32::UI::HiDpi::SetThreadDpiAwarenessContext(windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
