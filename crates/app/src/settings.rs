@@ -1569,6 +1569,25 @@ pub fn default_output_dir() -> PathBuf {
         .join("vibe-clip")
 }
 
+/// Vibe Clip 1's clips folder, from its settings file, if it's there.
+fn v1_clips_folder(settings: &[u8]) -> Option<PathBuf> {
+    let v: serde_json::Value = serde_json::from_slice(settings).ok()?;
+    let dir = PathBuf::from(v.get("outputFolder")?.as_str()?);
+    dir.is_dir().then_some(dir)
+}
+
+#[cfg(test)]
+mod v1_tests {
+    #[test]
+    fn vibe_clip_1_clips_folder() {
+        let here = std::env::temp_dir();
+        let json = serde_json::json!({ "outputFolder": here, "theme": "rose-pine" }).to_string();
+        assert_eq!(super::v1_clips_folder(json.as_bytes()), Some(here));
+        assert_eq!(super::v1_clips_folder(br#"{"outputFolder":"Z:\nowhere\at all"}"#), None, "a folder that's gone");
+        assert_eq!(super::v1_clips_folder(b"not json"), None);
+    }
+}
+
 fn settings_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("vibe-clip").join("settings.json"))
 }
@@ -1583,7 +1602,17 @@ fn load_path() -> Option<PathBuf> {
 impl RecordSettings {
     /// Last saved settings, or defaults on first run / unreadable file.
     pub fn load() -> Self {
-        Self::from_saved(load_path().and_then(|p| std::fs::read(p).ok()).as_deref())
+        let saved = load_path().and_then(|p| std::fs::read(p).ok());
+        let mut s = Self::from_saved(saved.as_deref());
+        // The first start after Vibe Clip 1 (the Electron app): its clips
+        // folder, so the library is the one you had.
+        if saved.is_none()
+            && std::env::var_os("VIBECLIP_SETTINGS").is_none()
+            && let Some(dir) = dirs::config_dir().and_then(|d| std::fs::read(d.join("Vibe Clip").join("settings.json")).ok()).and_then(|b| v1_clips_folder(&b))
+        {
+            s.output_dir = dir;
+        }
+        s
     }
 
     /// Settings from a saved file (defaults without one), brought up to date.
