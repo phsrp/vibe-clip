@@ -66,6 +66,12 @@ impl App {
             },
             k => k,
         };
+        // A page's sound is a source of its own on the Sound side (once).
+        let browser_sound = |s: &crate::settings::AudioSourceCfg| matches!(&s.kind, crate::settings::SourceKind::App { bundle_id, .. } if bundle_id == crate::settings::BROWSER_SOUND);
+        if matches!(kind, OverlayKind::Browser { .. }) && !self.settings.audio_sources.iter().any(browser_sound) {
+            let kind = crate::settings::SourceKind::App { bundle_id: crate::settings::BROWSER_SOUND.into(), app_name: "Browser overlays".into() };
+            self.settings.audio_sources.push(crate::settings::AudioSourceCfg::new("Browser overlays", kind));
+        }
         let key = self.settings.overlays.iter().map(|o| o.key).max().unwrap_or(0) + 1;
         let name = kind.default_name();
         self.settings.overlays.push(OverlayCfg { key, name, kind, visible: true, rect: None });

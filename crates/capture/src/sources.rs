@@ -59,6 +59,22 @@ pub struct AudioSource {
 /// (comma-separated stream indices), so the editor can rebuild track 1 exactly.
 pub const MIX_TAG_PREFIX: &str = "vibe-clip:mix=";
 
+/// The app source (`SourceKind::App`) that is Vibe Clip's browser overlays:
+/// their browser process (see [`set_browser_pid`]) and the ones it started.
+pub const BROWSER_APP: &str = "vibe-clip:browser";
+
+static BROWSER_PID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The browser overlays' browser process (0: none running), for their
+/// sound source: looked at whenever running processes are.
+pub fn set_browser_pid(pid: u32) {
+    BROWSER_PID.store(pid, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn browser_pid() -> u32 {
+    BROWSER_PID.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Name of the track holding sources that are in the clip without a track of
 /// their own.
 pub const REST_TRACK: &str = "Other clip audio";
