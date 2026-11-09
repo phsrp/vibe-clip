@@ -32,6 +32,8 @@ struct Made {
     state: Arc<Mutex<State>>,
     /// A web page's renderer, while it's on.
     browser: Option<crate::browser::Page>,
+    /// The picture's size its box was last fitted to.
+    fitted: Option<(u32, u32)>,
 }
 
 #[derive(Default, Clone)]
@@ -51,7 +53,7 @@ impl Overlays {
         let mut list = Vec::new();
         for cfg in cfgs.iter_mut() {
             let from = serde_json::to_string(&cfg.kind).unwrap_or_default();
-            let made = self.made.entry(cfg.key).or_insert_with(|| Made { picture: Default::default(), from: String::new(), state: Default::default(), browser: None });
+            let made = self.made.entry(cfg.key).or_insert_with(|| Made { picture: Default::default(), from: String::new(), state: Default::default(), browser: None, fitted: None });
             // A browser overlay runs only while it's shown.
             let wants_page = cfg.visible && matches!(cfg.kind, OverlayKind::Browser { .. });
             if made.from != from || (wants_page && made.browser.is_none()) || (!wants_page && made.browser.is_some()) {
@@ -63,10 +65,18 @@ impl Overlays {
             if let Some(page) = &made.browser {
                 page.set_size_from(&cfg.kind);
             }
-            if cfg.rect.is_none()
-                && let State::Made(w, h) = *made.state.lock().unwrap()
-            {
-                cfg.rect = Some(first_rect(&cfg.kind, (w, h), aspect));
+            if let State::Made(w, h) = *made.state.lock().unwrap() {
+                match cfg.rect {
+                    None => cfg.rect = Some(first_rect(&cfg.kind, (w, h), aspect)),
+                    // Another shape than it was fitted to (text typed, another
+                    // image): its height and middle kept, its width follows.
+                    Some([x, y, rw, rh]) if made.fitted.is_some_and(|f| f != (w, h)) => {
+                        let nw = rh * (w as f32 / h.max(1) as f32) / aspect;
+                        cfg.rect = Some([x + (rw - nw) / 2.0, y, nw, rh]);
+                    }
+                    _ => {}
+                }
+                made.fitted = Some((w, h));
             }
             if let (true, Some(rect)) = (cfg.visible, cfg.rect) {
                 list.push(Overlay { id: cfg.key.to_string(), rect, picture: made.picture.clone() });
@@ -135,7 +145,7 @@ fn make(kind: &OverlayKind, visible: bool, made: &mut Made, ctx: &egui::Context)
 /// Where a new overlay goes, by its picture's size: text and pages at their
 /// size in a 1080p video, an image too but no more than half the video
 /// wide; in the middle.
-fn first_rect(kind: &OverlayKind, (w, h): (u32, u32), aspect: f32) -> [f32; 4] {
+pub(crate) fn first_rect(kind: &OverlayKind, (w, h): (u32, u32), aspect: f32) -> [f32; 4] {
     let (mut fw, mut fh) = (w as f32 / (1080.0 * aspect), h as f32 / 1080.0);
     let most = if matches!(kind, OverlayKind::Image { .. }) { 0.5 } else { 1.0 };
     if fw > most {

@@ -641,7 +641,11 @@ impl App {
             }
         }
         self.reorder_cards(ui, &slots);
-        // Adding sources.
+        // Adding sources: overlays (Vibe Clip), and the webcam.
+        ui.add_space(12.0);
+        if let Some(kind) = crate::overlay_ui::add_buttons(ui) {
+            self.add_overlay(kind);
+        }
         if capture::webcam::AVAILABLE && self.settings.webcam.is_none() {
             ui.add_space(12.0);
             let add = crate::ui_kit::Btn::normal("Webcam").with_icon(egui_phosphor::regular::PLUS).small().tip("Put your camera in your clips, placed and sized on the preview");
@@ -694,7 +698,16 @@ impl App {
         let open = self.sources_view.open_cards.contains(&layer);
         let held = self.sources_view.reorder.is_some_and(|(l, ..)| l == layer);
         // Its line: what it is, then what's wrong with it, if anything.
+        let overlay_line = match layer {
+            Layer::Overlay(key) => Some((self.overlay_card_line(key), self.overlay_failed(key))),
+            _ => None,
+        };
         let (glyph, name, line, state, on) = match layer {
+            Layer::Overlay(_) => {
+                let ((glyph, name, line, on), failed) = overlay_line.as_ref().expect("an overlay");
+                let state = failed.then_some(("Couldn't show", pal.warn));
+                (*glyph, name.as_str(), line.clone(), state, *on)
+            }
             Layer::Screen => {
                 let apps = matches!(self.settings.capture, CaptureTarget::Apps { .. }) && capture::app_capture();
                 let line = if apps {
@@ -765,6 +778,12 @@ impl App {
                 let tip = if w.enabled { "Turn the webcam off: it leaves your clips, and its place, size, crop and format are kept" } else { "Put your webcam back in your clips" };
                 crate::ui_kit::switch(&mut rui, &mut w.enabled).on_hover_text(tip);
             }
+            if let Layer::Overlay(key) = layer
+                && let Some(v) = self.overlay_visible(key)
+            {
+                let tip = if *v { "Hide it: it leaves your clips, and its settings are kept" } else { "Show it in your clips again" };
+                crate::ui_kit::switch(&mut rui, v).on_hover_text(tip);
+            }
             if layer == Layer::Screen {
                 let what = if name == "Screen" { "your screen" } else { "your games and apps" };
                 let tip = if self.settings.screen.enabled { format!("Turn {what} off: it leaves your clips, and its place and crop are kept") } else { format!("Put {what} back in your clips") };
@@ -802,6 +821,7 @@ impl App {
                     match layer {
                         Layer::Screen => self.screen_rows(ui, frame),
                         Layer::Webcam => self.webcam_rows(ui),
+                        Layer::Overlay(key) => self.overlay_rows(ui, key),
                     }
                 });
             }

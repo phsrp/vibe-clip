@@ -48,6 +48,7 @@ mod meter;
 mod moments;
 mod nav;
 mod overlays;
+mod overlay_ui;
 mod picture;
 mod placement_ui;
 mod player;

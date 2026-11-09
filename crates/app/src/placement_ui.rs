@@ -68,6 +68,7 @@ impl App {
         let rect = match layer {
             Layer::Screen => self.screen_rect(aspect),
             Layer::Webcam => self.webcam_placement().map(|p| Rect::from_min_size(Pos2::new(p.x, p.y), vec2(p.w, p.h)))?,
+            Layer::Overlay(key) => self.overlay_rect(key)?,
         };
         Some(((vw, vh), aspect, rect))
     }
@@ -92,6 +93,7 @@ impl App {
                 let Some(p) = self.webcam_placement() else { return };
                 summary(at.as_deref(), (p.stretch - 1.0).abs() > 0.02, p.turns, p.flip_h, p.flip_v)
             }
+            Layer::Overlay(_) => summary(at.as_deref(), false, 0, false, false),
         };
         let was = self.arrangement();
         let mut toggle = false;
@@ -144,13 +146,27 @@ impl App {
         use egui_phosphor::regular as icon;
         let Some(((vw, vh), aspect, rect)) = self.placed_in(layer) else { return };
         let screen = layer == Layer::Screen;
+        let overlay = match layer {
+            Layer::Overlay(key) => Some(key),
+            _ => None,
+        };
         let [x, y, w, h] = to_pixels(rect, (vw, vh));
-        let (can_place, can_size) = if screen { self.screen_resettable(aspect) } else { self.webcam_resettable() };
+        let (can_place, can_size) = match layer {
+            Layer::Screen => self.screen_resettable(aspect),
+            Layer::Webcam => self.webcam_resettable(),
+            Layer::Overlay(key) => (true, self.overlays.picture_size(key).is_some()),
+        };
         let (turns, mirrored, upside_down) = match layer {
             Layer::Screen => (self.settings.screen.turns, self.settings.screen.flip_h, self.settings.screen.flip_v),
             Layer::Webcam => self.webcam_placement().map_or((0, false, false), |p| (p.turns, p.flip_h, p.flip_v)),
+            Layer::Overlay(_) => (0, false, false),
         };
-        let size_id = if screen { "placement_screen_size" } else { "placement_webcam_size" };
+        let size_id = match layer {
+            Layer::Screen => "placement_screen_size".to_owned(),
+            Layer::Webcam => "placement_webcam_size".to_owned(),
+            Layer::Overlay(key) => format!("placement_overlay_size_{key}"),
+        };
+        let size_id = size_id.as_str();
         // Linked at first: typed, the size keeps its shape, as dragging does
         // (unlinked, it stretches, as Shift does).
         let linked_once = egui::Id::new((size_id, "linked"));
@@ -214,7 +230,9 @@ impl App {
                 moved = Some([x, y, nw as i64, nh as i64]);
             }
         });
-        // A quarter at a time, as it's seen; how far, beside them.
+        // A quarter at a time, as it's seen; how far, beside them. (Overlays
+        // don't turn or flip.)
+        if overlay.is_none() {
         row(ui, "Turn", &mut |ui| {
             if Btn::icon(Kind::Normal, icon::ARROW_CLOCKWISE).small().tip("Turn clockwise").show(ui).clicked() {
                 turn = Some(1);
@@ -231,6 +249,7 @@ impl App {
         row(ui, "Upside down", &mut |ui| {
             ui_kit::switch(ui, &mut u);
         });
+        }
         // Its first place and size again, each on its own.
         ui_kit::divider(ui, ui_kit::ROW_LINE_INSET - reach);
         ui.horizontal(|ui| {
@@ -242,9 +261,10 @@ impl App {
                     Layer::Screen if self.video_shaped() => "Back to the size the video gives it, where it is",
                     Layer::Screen => "As big as the video again, where it is",
                     Layer::Webcam => "A quarter of the video wide again, unstretched, where it is",
+                    Layer::Overlay(_) => "Its own size again, unstretched, where it is",
                 };
                 reset_size = Btn::ghost("Reset size").small().enabled(can_size).tip(size_tip).show(ui).clicked();
-                let place_tip = if screen { "Back in the middle of the video, its size kept" } else { "Back to the bottom-right corner, its size kept" };
+                let place_tip = if screen || overlay.is_some() { "Back in the middle of the video, its size kept" } else { "Back to the bottom-right corner, its size kept" };
                 reset_place = Btn::ghost("Reset position").small().enabled(can_place).tip(place_tip).show(ui).clicked();
             });
         });
@@ -255,10 +275,18 @@ impl App {
         ui.add_space((ui_kit::WELL_GAP - (crate::sources_ui::GROUP_PAD - (crate::sources_ui::GROUP_ROW_H - ui_kit::CONTROL_H) / 2.0)).max(0.0));
 
         if reset_place {
-            if screen { self.screen_reset_position(aspect) } else { self.webcam_reset_position(aspect) }
+            match overlay {
+                Some(key) => self.overlay_centre(key),
+                None if screen => self.screen_reset_position(aspect),
+                None => self.webcam_reset_position(aspect),
+            }
         }
         if reset_size {
-            if screen { self.screen_reset_size(aspect) } else { self.webcam_reset_size(aspect) }
+            match overlay {
+                Some(key) => self.overlay_reset_size(key, aspect),
+                None if screen => self.screen_reset_size(aspect),
+                None => self.webcam_reset_size(aspect),
+            }
         }
         if let Some(px) = moved {
             let r = from_pixels(px, (vw, vh));
@@ -273,6 +301,7 @@ impl App {
                         cam.placement = crate::settings::PlacementCfg::laid_out(p, aspect);
                     }
                 }
+                Layer::Overlay(key) => self.set_overlay_rect(key, r),
             }
         }
         if let Some(by) = turn {
