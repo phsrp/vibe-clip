@@ -5,29 +5,28 @@ A clip recorder and editor for Windows: it keeps the last few minutes of your ga
 > **Vibe Clip is a modified version of [HasteClip](https://github.com/hasteclip/hasteclip) by Kaillr.**
 > Nearly all of it (the recorder, frame blending, editor, player, library and interface) is HasteClip's work, used under the GNU GPL v3. Vibe Clip is not HasteClip, and isn't made or endorsed by its authors. If you want the original, get [HasteClip](https://github.com/hasteclip/hasteclip/releases/latest).
 
+> [!TIP]
+> **Consider using HasteClip instead.** Vibe Clip is one person's small fork, and nearly everything good in it was designed and built by Kaillr in [HasteClip](https://github.com/hasteclip/hasteclip). HasteClip gets new features and fixes first, and it's made by the person who knows it best. If you only want a great clip recorder, [get HasteClip](https://github.com/hasteclip/hasteclip/releases/latest), and if you like it, [support Kaillr on Ko-fi](https://ko-fi.com/kaillr).
+
 ## What's different from HasteClip
 
 Changed by phsrp, starting 9 November 2026 (every change is in this repository's history, after HasteClip's own commits):
 
 - Renamed to Vibe Clip, with its own icon, data folders and updates (from this repository's releases).
-- Removed saving clips by voice.
-- Removed share links (they upload to HasteClip's own server).
-- Discord activity shows Vibe Clip, through its own Discord application.
-- A new icon and save sound.
 - Themes: Default (HasteClip's look), Gruvbox and Rosé Pine, each in dark and light (Settings → App).
+- Clips trimmed by other recorders (Medal's, with an MP4 edit list) play with their sound in sync.
 - The editor can change the speed of each part of a clip (right-click a part → Speed), keeping voices' pitch.
 - Custom audio tracks like OBS's (Sources → Sound → Tracks): named, in your order, shared by any sources.
 - Games that no list knows are found by how they run (full screen and drawing 3D).
-- Clips trimmed by other recorders (Medal's, with an MP4 edit list) play with their sound in sync.
 - The mouse wheel scrolls as many lines a notch as Windows does (egui's own is one).
-- No feedback button (it opened HasteClip's issue tracker).
-- Its own single-instance and control port (52141), so it runs beside HasteClip.
+
+Misc:
+- Removed saving clips by voice.
+- Removed share links (they upload to HasteClip's own server).
+- Discord activity shows Vibe Clip, through its own Discord application.
 
 Kept up to date with HasteClip: last merged HasteClip 0.8.0 (scenes, presets, image, text, video and web page sources, going live).
 
-Planned:
-
-- Moving an existing clip library in.
 
 ## Building from source
 
