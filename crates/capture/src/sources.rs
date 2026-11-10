@@ -30,11 +30,25 @@ pub enum SourceKind {
     Microphone { device: String },
     /// Everything the computer plays. With `exclude_app_sources`, apps that are
     /// also added as their own source are left out, so they aren't heard twice.
-    Desktop { exclude_app_sources: bool },
+    /// `leave_out`: programs, by executable (`FXSound.exe`; on Linux the
+    /// program's name, as an app source's), never recorded here, e.g. an
+    /// audio router that plays every app's sound again (where
+    /// [`crate::DESKTOP_PROGRAMS`]; what it records shows in its
+    /// [`Channel::programs`](crate::mixer::Channel::programs)).
+    Desktop { exclude_app_sources: bool, leave_out: Vec<String> },
+    /// What one output device plays, mixed, as you hear it (where
+    /// [`crate::OUTPUT_SOURCES`]): by device name (on Linux its node name), or
+    /// [`crate::audio::DEFAULT_DEVICE`] to follow the default one. Vibe Clip's
+    /// own sounds on it are in it too, as played (none are added to it).
+    Output { device: String },
     /// One application (and its helper processes), by bundle id on macOS,
     /// executable name (`Discord.exe`) on Windows, or program name
     /// (`Discord`, or `Game.exe` for one running in Wine/Proton) on Linux.
     App { bundle_id: String },
+    /// A video source's sound: the video layer whose `sound` is `id` (the
+    /// source's own) plays its file's sound into it as it plays (see
+    /// [`video_sound`]).
+    Video { id: String },
 }
 
 /// One source to capture, and where its audio goes in the file.
@@ -139,7 +153,7 @@ pub(crate) struct AudioCapture {
     /// and those added since ([`Self::set_sources`]), less those taken out.
     captured: Vec<(AudioSource, Arc<SourceFeed>)>,
     /// What every source's sound is placed by.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "windows", target_os = "macos", target_os = "linux")), allow(dead_code))]
     clock: Arc<Clock>,
     #[cfg(not(target_os = "linux"))]
     mics: Mics,
@@ -397,7 +411,7 @@ impl Mics {
     /// Capture `mic` too, while capturing: the watch opens it, woken now.
     /// Not here: an open can take seconds (a Bluetooth headset), and
     /// whoever adds it would wait.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
     fn add(&mut self, mic: Mic) {
         locked(&self.list).push(mic);
         self.watch();
@@ -408,7 +422,7 @@ impl Mics {
 
     /// Stop capturing the mic of the source `id`, while capturing: it's
     /// closed, and Off. False if there's no such mic.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
     fn remove(&self, id: &str) -> bool {
         let mut list = locked(&self.list);
         let Some(at) = list.iter().position(|m| m.id == id) else { return false };
@@ -616,6 +630,14 @@ impl AudioCapture {
                     mic.opened(opened, Instant::now());
                     mics.push(mic);
                 }
+                // Filled by its video as it plays.
+                SourceKind::Video { .. } => {
+                    video_sound::listen(&source.id, feed);
+                    channel.set_status(crate::mixer::SourceStatus::Live);
+                }
+                // Recorded from its device on Windows and Linux (`OUTPUT_SOURCES`).
+                #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+                SourceKind::Output { .. } => channel.set_status(crate::mixer::SourceStatus::Unavailable),
                 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
                 _ => system_sources.push((source.clone(), feed.clone(), channel)),
                 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
@@ -645,7 +667,9 @@ impl AudioCapture {
         let own_source = self.captured.iter().any(|(s, _)| is_own_app(&s.kind, own.as_deref()));
         for (source, feed) in &self.captured {
             let takes = match source.kind {
-                SourceKind::Desktop { exclude_app_sources } => !(own_source && exclude_app_sources),
+                SourceKind::Desktop { exclude_app_sources, .. } => !(own_source && exclude_app_sources),
+                // Its device plays Vibe Clip's sound already.
+                SourceKind::Output { .. } => false,
                 ref kind => is_own_app(kind, own.as_deref()),
             };
             if takes {
@@ -663,7 +687,7 @@ impl AudioCapture {
     /// [`Self::set_mic`]). Anything else about one captured already (where
     /// it goes, which apps it leaves out) stays as it started. The sources
     /// added, with their feeds, and those taken out, for the mixer.
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     pub(crate) fn set_sources(&mut self, sources: &[AudioSource], live: &LiveAudio) -> (Vec<(AudioSource, Arc<SourceFeed>)>, Vec<AudioSource>) {
         let mut gone = Vec::new();
         self.captured.retain(|(s, feed)| {
@@ -677,6 +701,8 @@ impl AudioCapture {
             self.stop_one(source, feed);
         }
         let mut added = Vec::new();
+        #[cfg_attr(not(any(target_os = "windows", target_os = "linux")), allow(unused_mut))]
+        let mut set_anew = false;
         for source in sources {
             match self.captured.iter().position(|(s, _)| s.id == source.id) {
                 None => added.push((source.clone(), self.start_one(source, live))),
@@ -687,34 +713,63 @@ impl AudioCapture {
                     {
                         self.captured[at].0.kind = source.kind.clone();
                     }
+                    // A desktop leaving out other apps or programs, an
+                    // output source given another device: the same track,
+                    // other streams into it.
+                    #[cfg(any(target_os = "windows", target_os = "linux"))]
+                    if crate::DESKTOP_CHANGES_WHILE_CAPTURING
+                        && self.captured[at].0.kind != source.kind
+                        && matches!(
+                            (&self.captured[at].0.kind, &source.kind),
+                            (SourceKind::Desktop { .. }, SourceKind::Desktop { .. }) | (SourceKind::Output { .. }, SourceKind::Output { .. })
+                        )
+                        && let Some(system) = self.system.as_ref()
+                    {
+                        system.update(source.clone());
+                        self.captured[at].0.kind = source.kind.clone();
+                        set_anew = true;
+                    }
                 }
             }
         }
-        if !gone.is_empty() || !added.is_empty() {
+        if !gone.is_empty() || !added.is_empty() || set_anew {
             self.route_own_sound();
         }
         (added, gone.into_iter().map(|(s, _)| s).collect())
     }
 
     /// Start capturing `source` too, while capturing: its feed.
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     fn start_one(&mut self, source: &AudioSource, live: &LiveAudio) -> Arc<SourceFeed> {
         let feed = SourceFeed::new(crate::mixer::RATE, self.clock.clone());
         let channel = live.channel(&source.id);
         match &source.kind {
+            #[cfg(not(target_os = "linux"))]
             SourceKind::Microphone { device } => self.mics.add(Mic::new(&source.id, device, feed.clone(), channel)),
-            // Desktop or app sound, to a capture of it started now if
-            // there's none (started empty: nothing's waited for).
+            SourceKind::Video { .. } => {
+                video_sound::listen(&source.id, &feed);
+                channel.set_status(crate::mixer::SourceStatus::Live);
+            }
+            #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+            SourceKind::Output { .. } => channel.set_status(crate::mixer::SourceStatus::Unavailable),
+            // Desktop or app sound (on Linux a mic too: a PipeWire stream
+            // as they are), to a capture of it started now if there's none
+            // (started empty: nothing's waited for).
             _ => {
+                #[cfg(target_os = "linux")]
+                if matches!(source.kind, SourceKind::Microphone { .. }) {
+                    feed.mono_with(channel.mono_flag());
+                    feed.denoise_with(channel.denoise_mode());
+                }
                 if self.system.is_none() {
                     match SystemAudio::start(Vec::new()) {
                         Ok(system) => self.system = Some(system),
                         Err(e) => eprintln!("audio source \"{}\": {e:#}", source.name),
                     }
                 }
-                match &self.system {
+                match self.system.as_mut() {
                     Some(system) => system.add(source.clone(), feed.clone(), channel),
-                    None => channel.set_status(SourceStatus::Unavailable),
+                    None => channel.set_status(crate::mixer::SourceStatus::Unavailable),
                 }
             }
         }
@@ -724,16 +779,18 @@ impl AudioCapture {
 
     /// Stop capturing `source`, whose feed is `feed`, while capturing: what
     /// its feed has is still there to mix.
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     fn stop_one(&mut self, source: &AudioSource, feed: &Arc<SourceFeed>) {
         feed.close();
         own_sound::forget(feed);
         match source.kind {
+            #[cfg(not(target_os = "linux"))]
             SourceKind::Microphone { .. } => {
                 self.mics.remove(&source.id);
             }
+            SourceKind::Video { .. } => video_sound::forget(feed),
             _ => {
-                if let Some(system) = &self.system {
+                if let Some(system) = self.system.as_mut() {
                     system.remove(&source.id);
                 }
             }
@@ -759,6 +816,7 @@ impl AudioCapture {
     pub(crate) fn stop(mut self) {
         for (_, feed) in &self.captured {
             own_sound::forget(feed);
+            video_sound::forget(feed);
         }
         #[cfg(not(target_os = "linux"))]
         self.mics.stop();
@@ -1012,6 +1070,97 @@ pub mod own_sound {
     }
 }
 
+/// Video sources' sound: each video layer with sound plays its file's sound,
+/// as it shows its picture, into the feeds of the audio source it names
+/// ([`SourceKind::Video`]): the meters' capture's, a recording's, those
+/// that start while it plays too.
+pub mod video_sound {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Mutex, Weak};
+
+    use crate::mixer::SourceFeed;
+
+    /// Each video source's feeds, by its id; bumped generation on change.
+    fn listeners() -> &'static Mutex<Vec<(String, Weak<SourceFeed>)>> {
+        static LISTENERS: Mutex<Vec<(String, Weak<SourceFeed>)>> = Mutex::new(Vec::new());
+        &LISTENERS
+    }
+    static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+    /// `feed` takes the sound of the video source `id` (once, however
+    /// often it's said).
+    pub(crate) fn listen(id: &str, feed: &Arc<SourceFeed>) {
+        let mut d = listeners().lock().unwrap();
+        d.retain(|(_, w)| w.strong_count() > 0);
+        if !d.iter().any(|(_, w)| std::ptr::eq(w.as_ptr(), Arc::as_ptr(feed))) {
+            d.push((id.to_owned(), Arc::downgrade(feed)));
+            GENERATION.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// `feed` takes no video's sound (any more).
+    pub(crate) fn forget(feed: &Arc<SourceFeed>) {
+        let mut d = listeners().lock().unwrap();
+        let had = d.len();
+        d.retain(|(_, w)| w.strong_count() > 0 && !std::ptr::eq(w.as_ptr(), Arc::as_ptr(feed)));
+        if d.len() != had {
+            GENERATION.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// One video's sound being played into the feeds of the source `id`,
+    /// at `rate`.
+    pub struct Playing {
+        id: String,
+        rate: u32,
+        generation: u64,
+        children: Vec<(Weak<SourceFeed>, Arc<SourceFeed>)>,
+    }
+
+    impl Playing {
+        pub fn new(id: &str, rate: u32) -> Self {
+            let mut playing = Self { id: id.to_owned(), rate, generation: u64::MAX, children: Vec::new() };
+            playing.follow();
+            playing
+        }
+
+        /// Into the feeds of its source right now.
+        fn follow(&mut self) {
+            let generation = GENERATION.load(Ordering::Relaxed);
+            if generation == self.generation {
+                return;
+            }
+            self.generation = generation;
+            self.leave();
+            let children = listeners().lock().unwrap().iter().filter(|(id, _)| *id == self.id).filter_map(|(_, w)| Some((w.clone(), w.upgrade()?.add_child(self.rate)))).collect();
+            self.children = children;
+        }
+
+        fn leave(&mut self) {
+            for (parent, child) in self.children.drain(..) {
+                if let Some(p) = parent.upgrade() {
+                    p.remove_child(&child);
+                }
+            }
+        }
+
+        /// Interleaved samples, `channels` a frame, the first heard at host
+        /// time `at`.
+        pub fn push_at(&mut self, at: f64, samples: &[f32], channels: usize) {
+            self.follow();
+            for (_, child) in &self.children {
+                child.push(at, samples, channels);
+            }
+        }
+    }
+
+    impl Drop for Playing {
+        fn drop(&mut self) {
+            self.leave();
+        }
+    }
+}
+
 /// Vibe Clip's own id as an app source ([`SourceKind::App`]): its executable
 /// on Windows, its bundle id on macOS. None on Linux, where it isn't listed.
 pub fn own_app_id() -> Option<String> {
@@ -1146,7 +1295,7 @@ mod tests {
         AudioSource {
             id: name.into(),
             name: name.into(),
-            kind: SourceKind::Desktop { exclude_app_sources: false },
+            kind: SourceKind::Desktop { exclude_app_sources: false, leave_out: Vec::new() },
             in_mix,
             own_track,
             buses: Vec::new(),
@@ -1294,7 +1443,7 @@ mod tests {
         assert_eq!(loudest, 0.25, "in it once");
         let arrived = feed.arrived();
         own_sound::forget(&feed);
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(std::time::Duration::from_millis(20));
         playing.push(&[0.25; 960]);
         assert_eq!(feed.arrived(), arrived, "none after it's forgotten");
     }
@@ -1483,6 +1632,30 @@ mod tests {
         assert!(during > 0.7, "{during}");
     }
 
+    /// A video's sound reaches the source of its id, at its own rate, and
+    /// no other: no device is opened for it (it's filled by its video).
+    #[test]
+    fn a_videos_sound_reaches_its_source() {
+        let live = LiveAudio::new();
+        let video = AudioSource { kind: SourceKind::Video { id: "video-7".into() }, ..src("video-7", true, false) };
+        let other = AudioSource { kind: SourceKind::Video { id: "video-8".into() }, ..src("video-8", true, false) };
+        let _monitor = LevelMonitor::start(&[video, other], live.clone()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let (channel, quiet) = (live.channel("video-7"), live.channel("video-8"));
+        assert_eq!(channel.status(), crate::mixer::SourceStatus::Live);
+        // Half a second of a loud tone at 44.1 kHz, each block when it's heard.
+        let mut playing = video_sound::Playing::new("video-7", 44_100);
+        let block: Vec<f32> = (0..441).flat_map(|i| [0.8 * (i as f32 * 0.1).sin(); 2]).collect();
+        for _ in 0..50 {
+            playing.push_at(host_now(), &block, 2);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let (heard, not) = (channel.input.take().max_peak(), quiet.input.take().max_peak());
+        assert!(heard > 0.7, "{heard}");
+        assert!(not < 0.01, "{not}");
+    }
+
     #[test]
     #[ignore = "captures real system audio; run with --ignored"]
     fn own_sound_goes_to_its_app_source_from_a_player_opened_before() {
@@ -1490,7 +1663,7 @@ mod tests {
         let mut playing = own_sound::Playing::at(44_100);
         let live = LiveAudio::new();
         let own = own_app_id().expect("Vibe Clip's own app id");
-        let desktop = AudioSource { kind: SourceKind::Desktop { exclude_app_sources: true }, ..src("Desktop", true, true) };
+        let desktop = AudioSource { kind: SourceKind::Desktop { exclude_app_sources: true, leave_out: Vec::new() }, ..src("Desktop", true, true) };
         let app = AudioSource { kind: SourceKind::App { bundle_id: own }, ..src("Vibe Clip", true, true) };
         let _monitor = LevelMonitor::start(&[desktop, app], live.clone()).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(500));

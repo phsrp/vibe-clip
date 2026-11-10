@@ -101,6 +101,26 @@ pub fn section_head(ui: &mut egui::Ui, text: &str, first: bool, extra: impl FnOn
 pub fn apply(ctx: &egui::Context) {
     theme::install_fonts(ctx);
     apply_colors(ctx);
+    ctx.options_mut(|o| o.input_options.line_scroll_speed = line_scroll_speed());
+}
+
+/// How far a notch of the mouse wheel scrolls, in points (Vibe Clip): as
+/// many lines as the system scrolls (Windows' "lines to scroll at a time",
+/// 3 unless it's changed), 40 points each. egui's own is one line a notch,
+/// which felt far slower than any other app.
+fn line_scroll_speed() -> f32 {
+    const LINE: f32 = 40.0;
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW};
+        let mut lines: u32 = 0;
+        let ok = unsafe { SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, Some((&raw mut lines).cast()), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0)) }.is_ok();
+        // A page a notch (u32::MAX) or none: three lines, as most have it.
+        if ok && (1..=20).contains(&lines) {
+            return LINE * lines as f32;
+        }
+    }
+    LINE * 3.0
 }
 
 /// Set the chosen theme's dark and light looks (at start-up, and when the
@@ -109,6 +129,39 @@ pub fn apply_colors(ctx: &egui::Context) {
     for (which, dark) in [(egui::Theme::Dark, true), (egui::Theme::Light, false)] {
         ctx.style_mut_of(which, |style| style_for(style, theme::look(dark)));
     }
+    // Two clicks are a double-click as far apart as the system has it
+    // (Windows' is half a second, as is macOS's unless it's changed in
+    // System Settings): egui's own 0.3 s missed many.
+    ctx.options_mut(|o| o.input_options.max_double_click_delay = double_click_time());
+}
+
+/// How far apart two clicks can be and still be a double-click: as the
+/// system has it.
+fn double_click_time() -> f64 {
+    #[cfg(target_os = "windows")]
+    {
+        let ms = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime() };
+        if ms > 0 {
+            return f64::from(ms) / 1000.0;
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let secs = objc2_app_kit::NSEvent::doubleClickInterval();
+        if secs > 0.0 {
+            return secs;
+        }
+    }
+    0.5
+}
+
+/// Whether `resp` was double-clicked: to open what it is, or put a slider
+/// back as it was. A click a moment before it (selecting it, moving the
+/// slider) makes egui count three, which is no double-click to it, and it
+/// was missed. A third click straight after counts again too: only for
+/// what's the same done twice.
+pub fn double_clicked(resp: &Response) -> bool {
+    resp.clicked() && resp.ctx.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary) || i.pointer.button_triple_clicked(egui::PointerButton::Primary))
 }
 
 fn style_for(style: &mut egui::Style, p: &Pal) {
@@ -273,37 +326,6 @@ pub fn eased_frame<R>(ui: &mut egui::Ui, id: egui::Id, frame: egui::Frame, add: 
 fn eased_now(e: &Eased, now: f64) -> f32 {
     let t = ((now - e.start) as f32 / theme::NORMAL).clamp(0.0, 1.0);
     e.from + (e.to - e.from) * theme::ease_out(t)
-}
-
-/// Something that comes and goes (a note, a warning): while `shown` it's
-/// there; it fades and its height slides as it changes, so what's below
-/// moves smoothly. Keeps the last content to fade it out with when `add`
-/// isn't given (pass the same `id`).
-pub fn reveal(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, shown: bool, add: impl FnOnce(&mut egui::Ui)) {
-    let id = egui::Id::new(id).with("reveal");
-    let t = theme::toggle(ui.ctx(), id, shown, theme::NORMAL);
-    if t <= 0.0 {
-        return;
-    }
-    if t < 1.0 {
-        moving(ui.ctx());
-    }
-    let full = ui.data(|d| d.get_temp::<f32>(id.with("h")));
-    let top = ui.cursor().min;
-    let width = ui.available_width();
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(top, vec2(width, 100_000.0))).layout(egui::Layout::top_down(egui::Align::Min)));
-    let h = full.map(|f| f * theme::ease_out(t));
-    if let Some(h) = h.filter(|_| t < 1.0) {
-        child.set_clip_rect(Rect::from_min_size(top, vec2(width, h)).intersect(ui.clip_rect()));
-    }
-    child.multiply_opacity(t);
-    add(&mut child);
-    let real = child.min_rect().height();
-    if shown {
-        ui.data_mut(|d| d.insert_temp(id.with("h"), real));
-    }
-    let h = if t >= 1.0 { real } else { full.unwrap_or(real) * theme::ease_out(t) };
-    ui.allocate_space(vec2(width, h));
 }
 
 /// A group: content on the raised surface, padded. Its height eases when
@@ -859,6 +881,26 @@ pub fn keycaps(ui: &mut egui::Ui, keys: &[String], listening: bool) -> Response 
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// A thin bar `width` wide: how far something's got, or (`None`) that it's
+/// under way, how far not known: a part of it moving across.
+pub fn progress_bar(ui: &mut egui::Ui, width: f32, done: Option<f32>) {
+    let p = theme::pal(ui);
+    let (r, _) = ui.allocate_exact_size(vec2(width, 6.0), Sense::hover());
+    ui.painter().rect_filled(r, 3, p.control);
+    let (from, to) = match done {
+        Some(f) => (0.0, f.clamp(0.0, 1.0)),
+        None => {
+            ui.ctx().request_repaint();
+            let t = (ui.input(|i| i.time) * 0.7).fract() as f32 * 1.4 - 0.2;
+            ((t - 0.2).max(0.0), (t + 0.2).min(1.0))
+        }
+    };
+    if to > from {
+        let x = |f: f32| r.left() + r.width() * f;
+        ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(x(from), r.top()), egui::pos2(x(to), r.bottom())), 3, p.text);
+    }
+}
+
 // --- Switch, segmented, select ---
 
 /// On or off. The knob slides; the track fills.
@@ -1244,11 +1286,26 @@ pub fn menu_body<R>(ui: &mut egui::Ui, w: f32, add: impl FnOnce(&mut egui::Ui) -
         *m
     });
     ui.set_width(m.asked.max(m.widest));
+    // Never taller than the window (a long menu, a short window): what
+    // doesn't fit scrolls, a little in from its edges. The menu's moved up
+    // to end inside it, as it's moved left near the right edge.
+    let room = ui.ctx().content_rect().height() - 2.0 * MENU_EDGE;
+    // As tall as its rows were last frame (up to the room there is): egui
+    // sizes a menu by its first frame and keeps that size, and rows can
+    // measure shorter then (a heading) or arrive later (a list being found).
+    let tall = key.with("tall");
+    if let Some(h) = ui.data(|d| d.get_temp::<f32>(tall)) {
+        ui.set_min_height(h.min(room.max(80.0)));
+    }
     MENUS.with(|s| s.borrow_mut().push(key));
-    let r = add(ui);
+    let out = egui::ScrollArea::vertical().id_salt(key.with("scroll")).max_height(room.max(80.0)).auto_shrink([false, true]).show(ui, add);
     MENUS.with(|s| s.borrow_mut().pop());
-    r
+    ui.data_mut(|d| d.insert_temp(tall, out.content_size.y));
+    out.inner
 }
+
+/// How far a menu stays from the window's top and bottom (its frame too).
+const MENU_EDGE: f32 = 16.0;
 
 /// A row that opens a submenu to its right on hover.
 pub fn submenu<R>(ui: &mut egui::Ui, item: Item, content: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
@@ -1292,6 +1349,17 @@ pub fn menu_head(ui: &mut egui::Ui, text: &str) {
 /// A menu opened by clicking `resp`, under it (aligned to its `left` or
 /// right edge).
 pub fn menu_popup<R>(resp: &Response, left: bool, width: f32, content: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
+    menu_popup_at(resp, if left { egui::RectAlign::BOTTOM_START } else { egui::RectAlign::BOTTOM_END }, width, content)
+}
+
+/// A menu opened by clicking `resp`, to its right, its bottom level with
+/// `resp`'s: for something at the bottom of the window.
+#[allow(dead_code)] // HasteClip's feedback menu's (Vibe Clip has none)
+pub fn menu_popup_beside<R>(resp: &Response, width: f32, content: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
+    menu_popup_at(resp, egui::RectAlign::RIGHT_END, width, content)
+}
+
+fn menu_popup_at<R>(resp: &Response, align: egui::RectAlign, width: f32, content: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
     let id = resp.id.with("menu");
     // Dev aid: `VIBECLIP_OPEN_MENU=<n>` opens the n-th menu button drawn
     // (from 0) once, to see it without clicking.
@@ -1311,7 +1379,7 @@ pub fn menu_popup<R>(resp: &Response, left: bool, width: f32, content: impl FnOn
     egui::Popup::menu(resp)
         .id(id)
         .gap(6.0)
-        .align(if left { egui::RectAlign::BOTTOM_START } else { egui::RectAlign::BOTTOM_END })
+        .align(align)
         .frame(ui_frame)
         .style(menu_style)
         // Never narrower than what opened it (a dropdown hangs from its field).
@@ -2105,6 +2173,19 @@ impl ValueField<'_> {
         self.presets.iter().position(|p| (p.value - self.value).abs() < near)
     }
 
+    /// The widest a number it takes can be, as a sample of wide digits
+    /// (a minus, all its places), and how many letters that is.
+    fn longest(&self) -> (String, usize) {
+        let whole = |v: f64| number_text(v.trunc(), 0);
+        let mut t = [*self.range.start(), *self.range.end()].map(whole).into_iter().max_by_key(String::len).unwrap_or_default();
+        if self.decimals > 0 {
+            t = format!("{t}.{}", "0".repeat(self.decimals));
+        }
+        let t: String = t.chars().map(|c| if c.is_ascii_digit() { '8' } else { c }).collect();
+        let n = t.chars().count();
+        (t, n)
+    }
+
     /// `v` as it can be: to its places, within its range.
     fn kept(&self, v: f64) -> f64 {
         let scale = 10f64.powi(self.decimals as i32);
@@ -2119,7 +2200,17 @@ impl ValueField<'_> {
         let edit_id = self.id.with("text");
         let editing_key = self.id.with("editing");
         let mut editing: Option<String> = ui.data(|d| d.get_temp(editing_key));
-        let (rect, _) = ui.allocate_exact_size(vec2(self.width, CONTROL_H), Sense::hover());
+        // Room for its longest number and its unit, whatever it was given
+        // (a box made for "64 px" cut "144 px" off under its unit).
+        let (longest, longest_chars) = self.longest();
+        let width = if time {
+            self.width
+        } else {
+            let measure = |t: &str| ui.painter().layout_no_wrap(t.to_owned(), theme::font(13.0, W::Medium), p.text).size().x;
+            let unit_w = if self.unit.is_empty() { 0.0 } else { measure(self.unit) + 4.0 };
+            self.width.max(10.0 + measure(&longest) + 2.0 + unit_w + 26.0 + 4.0)
+        };
+        let (rect, _) = ui.allocate_exact_size(vec2(width, CONTROL_H), Sense::hover());
         let focused = ui.memory(|m| m.has_focus(edit_id));
         let hovered = ui.rect_contains_pointer(rect);
         let menu_open = egui::Popup::is_id_open(ui.ctx(), self.id.with("dd").with("menu"));
@@ -2147,6 +2238,10 @@ impl ValueField<'_> {
             let tw = ui.painter().layout_no_wrap(if text.is_empty() { " ".into() } else { text.clone() }, font.clone(), p.text).size().x;
             let unit_w = if self.unit.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(self.unit.to_owned(), font.clone(), p.text3).size().x + 4.0 };
             let input_w = (tw + 1.0).min(field.width() - unit_w).max(14.0);
+            // Clicking anywhere in the box (not just on the digits) types:
+            // under the digits' own box, so clicks on them place the caret
+            // and choose, as in any text box.
+            let box_resp = ui.interact(field, self.id.with("box"), Sense::click());
             let mut fui = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(field.min, vec2(input_w, field.height()))).layout(egui::Layout::left_to_right(egui::Align::Center)));
             // The box itself: what goes in is kept to a number, above and below.
             #[allow(clippy::disallowed_methods)]
@@ -2156,6 +2251,7 @@ impl ValueField<'_> {
                 .font(font.clone())
                 .text_color(p.text)
                 .desired_width(input_w)
+                .char_limit(longest_chars)
                 .margin(Margin::ZERO)
                 .show(&mut fui);
             text = number_typing(&text, point, minus);
@@ -2163,8 +2259,6 @@ impl ValueField<'_> {
             if !self.unit.is_empty() {
                 ui.painter().text(Pos2::new(field.left() + input_w + 2.0, rect.center().y), Align2::LEFT_CENTER, self.unit, font, p.text3);
             }
-            // Clicking anywhere in the box (not just on the digits) types.
-            let box_resp = ui.interact(field, self.id.with("box"), Sense::click());
             if box_resp.clicked() {
                 resp.request_focus();
             }
@@ -2191,11 +2285,13 @@ impl ValueField<'_> {
                     editing = Some(number_text(self.presets[next].value, self.decimals));
                 }
             }
-            if resp.lost_focus()
-                && let Some(t) = editing.take()
-                && let Ok(v) = t.parse::<f64>()
-            {
-                out = Some(self.kept(v));
+            // Enter, Tab or clicking away: what's typed counts. Esc (the box
+            // lets go of the keys by itself): it's put back.
+            if resp.lost_focus() {
+                let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                if let Some(v) = editing.take().filter(|_| !esc).and_then(|t| t.parse::<f64>().ok()) {
+                    out = Some(self.kept(v));
+                }
             }
             ui.data_mut(|d| match &editing {
                 Some(t) => {
@@ -2221,7 +2317,7 @@ impl ValueField<'_> {
             format!("{}–{} {}", number_text(lo, self.decimals), number_text(hi, self.decimals), self.unit).trim_end().to_owned()
         };
         // As wide as the field (wider when a value's note needs it).
-        menu_popup(&ddr, false, self.width, |ui| {
+        menu_popup(&ddr, false, width, |ui| {
             for (i, preset) in self.presets.iter().enumerate() {
                 let mut item = Item::new(preset.label.clone()).check(current == Some(i));
                 if !preset.note.is_empty() {
@@ -2530,6 +2626,92 @@ pub fn type_in_size(ctx: &egui::Context, id: &str) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::new((id, "type_in")), true));
 }
 
+/// Rows being dragged in a [`sliding_rows`] list: those that go with the
+/// pointer (a group's with it, or several picked), the one taken hold of,
+/// and how far down it the pointer took hold.
+pub struct Lifted<'a, K> {
+    pub rows: &'a [K],
+    pub grabbed: &'a K,
+    pub grab: f32,
+}
+
+/// A list's rows, top first (each `K` with its height, `gap` between),
+/// each drawn by `row` (given its index) in a box of its own that slides
+/// to its place when the list changes (one moved, put in, taken out), a
+/// new one fading in; those `lifted` drawn where the pointer has them,
+/// over the rest, a shadow under them. Each row's place, and how far the
+/// lifted ones are from theirs.
+pub fn sliding_rows<K: std::hash::Hash + PartialEq + std::fmt::Debug>(ui: &mut egui::Ui, id: egui::Id, rows: &[(K, f32)], gap: f32, lifted: Option<Lifted<'_, K>>, mut row: impl FnMut(&mut egui::Ui, usize)) -> (Vec<Rect>, Option<f32>) {
+    let total = rows.iter().map(|(_, h)| *h).sum::<f32>() + gap * rows.len().saturating_sub(1) as f32;
+    let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
+    let ctx = ui.ctx().clone();
+    let now = ctx.input(|i| i.time);
+    let mut places = Vec::with_capacity(rows.len());
+    let mut top = area.top();
+    for (_, h) in rows {
+        places.push(Rect::from_min_size(Pos2::new(area.left(), top), vec2(area.width(), *h)));
+        top += h + gap;
+    }
+    // The lifted ones, all as far from their places as the one taken hold
+    // of is from where the pointer has it (kept within the list).
+    let pointer = ctx.input(|i| i.pointer.interact_pos().or(i.pointer.hover_pos()));
+    let lift = lifted.as_ref().and_then(|l| {
+        let at = rows.iter().position(|(k, _)| k == l.grabbed)?;
+        let held: Vec<usize> = rows.iter().enumerate().filter(|(_, (k, _))| l.rows.contains(k)).map(|(i, _)| i).collect();
+        let (first, last) = (places[*held.first()?], places[*held.last()?]);
+        let by = pointer?.y - l.grab - places[at].top();
+        Some(by.clamp(area.top() - first.top(), area.bottom() - last.bottom()))
+    });
+    let is_lifted = |k: &K| lift.is_some() && lifted.as_ref().is_some_and(|l| l.rows.contains(k));
+    // The list seen for the first time: its rows are there, not fading in.
+    let first = ctx.data(|d| d.get_temp::<Vec<egui::Id>>(id.with("rows")).is_none());
+    let mut seen = Vec::with_capacity(rows.len());
+    let mut drawn_last = Vec::new();
+    for (i, (key, _)) in rows.iter().enumerate() {
+        let rid = id.with(key);
+        seen.push(rid);
+        let place = places[i];
+        let y = if is_lifted(key) {
+            let y = place.top() + lift.unwrap_or(0.0);
+            // At once, so it slides from where it's let go.
+            theme::value(&ctx, rid.with("y"), y - area.top(), 0.0);
+            y
+        } else {
+            area.top() + theme::value(&ctx, rid.with("y"), place.top() - area.top(), theme::NORMAL)
+        };
+        let born = ctx.data_mut(|d| *d.get_temp_mut_or_insert_with(rid.with("born"), || if first { now - 10.0 } else { now }));
+        let fade = theme::since(&ctx, born, theme::NORMAL);
+        let r = Rect::from_min_size(Pos2::new(area.left(), y), place.size());
+        if is_lifted(key) {
+            drawn_last.push((i, r, rid));
+            continue;
+        }
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt(rid).layout(egui::Layout::top_down(egui::Align::Min)));
+        if fade < 1.0 {
+            child.multiply_opacity(fade);
+        }
+        row(&mut child, i);
+    }
+    let layer = egui::LayerId::new(egui::Order::Foreground, id.with("lifted"));
+    for (i, r, rid) in drawn_last {
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt(rid).layer_id(layer).layout(egui::Layout::top_down(egui::Align::Min)));
+        let shadow = egui::Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha(80) };
+        child.painter().add(shadow.as_shape(r, 6));
+        child.painter().rect_filled(r, 6, theme::pal(ui).pop);
+        row(&mut child, i);
+    }
+    // Rows gone: forgotten, so one put back fades in where it goes.
+    let was: Vec<egui::Id> = ctx.data(|d| d.get_temp(id.with("rows"))).unwrap_or_default();
+    for gone in was.iter().filter(|r| !seen.contains(r)) {
+        ctx.data_mut(|d| {
+            d.remove::<f64>(gone.with("born"));
+        });
+        theme::forget_value(&ctx, gone.with("y"));
+    }
+    ctx.data_mut(|d| d.insert_temp(id.with("rows"), seen));
+    (places, lift)
+}
+
 /// The common aspect ratios, width and height, and what each is for: every
 /// aspect ratio chosen in the app is one of these or typed ([`ratio_field`]).
 pub const RATIOS: [(u32, u32, &str); 7] = [
@@ -2661,7 +2843,9 @@ pub fn ratio_field_width(ctx: &egui::Context, id: &str, now: Option<[u32; 2]>) -
 /// A whole number in a box of its own, typed or stepped: clicking it
 /// chooses all of it, so the digits typed replace it; ↑ ↓ (and the wheel
 /// over it) add or take one, with Shift ten. Enter, Tab or clicking away
-/// applies what's typed; Esc puts it back. Kept within `range`. The new
+/// applies what's typed; Esc puts it back. Kept within `range`. A text box
+/// as any other besides (the caret, choosing with the pointer, copy, cut
+/// and paste, Home and End), that only takes what a number has. The new
 /// number, when it changes.
 pub fn number_box(ui: &mut egui::Ui, id: egui::Id, value: u32, range: std::ops::RangeInclusive<u32>, width: f32) -> Option<u32> {
     signed_box(ui, id, i64::from(value), i64::from(*range.start())..=i64::from(*range.end()), width).map(|v| v as u32)
@@ -2670,84 +2854,88 @@ pub fn number_box(ui: &mut egui::Ui, id: egui::Id, value: u32, range: std::ops::
 /// A [`number_box`] that can go below zero (a minus typed first), where
 /// `range` does.
 pub fn signed_box(ui: &mut egui::Ui, id: egui::Id, value: i64, range: std::ops::RangeInclusive<i64>, width: f32) -> Option<i64> {
-    use egui::{Event, EventFilter, Key};
+    use egui::Key;
     let p = theme::pal(ui);
     let (rect, _) = ui.allocate_exact_size(vec2(width, CONTROL_H), Sense::hover());
-    let resp = ui.interact(rect, id, Sense::click()).on_hover_cursor(egui::CursorIcon::Text);
-    if resp.clicked() {
-        resp.request_focus();
-    }
     let key = id.with("typed");
     let mut typed: Option<String> = ui.data(|d| d.get_temp(key));
     let kept = |v: i64| v.clamp(*range.start(), *range.end());
-    // As many digits as the longest number it can be.
-    let digits = range.start().unsigned_abs().max(range.end().unsigned_abs()).to_string().len();
+    let minus = *range.start() < 0;
+    // As many digits as the longest number it can be, and its minus.
+    let longest = range.start().unsigned_abs().max(range.end().unsigned_abs()).to_string().len() + usize::from(minus);
     let mut out = None;
-    if resp.has_focus() {
-        ui.memory_mut(|m| m.set_focus_lock_filter(id, EventFilter { tab: false, horizontal_arrows: false, vertical_arrows: true, escape: true }));
-        let t = typed.get_or_insert_with(String::new);
-        let now = |t: &String, out: Option<i64>| t.parse::<i64>().unwrap_or(out.unwrap_or(value));
-        let mut done = false;
-        for ev in ui.input(|i| i.events.clone()) {
-            match ev {
-                Event::Text(s) => {
-                    for c in s.chars() {
-                        let sign = usize::from(t.starts_with('-'));
-                        // A minus first, where it can go below zero; no zeros
-                        // in front, and no more digits than the biggest has.
-                        if c == '-' && t.is_empty() && *range.start() < 0 {
-                            t.push(c);
-                        } else if c.is_ascii_digit() && !(c == '0' && t.len() == sign) && t.len() - sign < digits {
-                            t.push(c);
-                        }
-                    }
+    let focused = ui.memory(|m| m.has_focus(id));
+    // While it's typed in: ↑ ↓ add or take one (Shift: ten), and the wheel
+    // over it, before the box sees them; the number then all chosen, so
+    // what's typed next replaces it.
+    if focused {
+        // Read off as they come (egui's own matching would take Shift+↑
+        // for ↑ too).
+        let mut by = ui.input_mut(|i| {
+            let mut by = 0i64;
+            i.events.retain(|e| match e {
+                egui::Event::Key { key: k @ (Key::ArrowUp | Key::ArrowDown), pressed: true, modifiers, .. } if !modifiers.command && !modifiers.alt => {
+                    let n = if modifiers.shift { 10 } else { 1 };
+                    by += if *k == Key::ArrowUp { n } else { -n };
+                    false
                 }
-                Event::Key { key, pressed: true, modifiers, .. } => {
-                    let by = if modifiers.shift { 10 } else { 1 };
-                    match key {
-                        Key::Backspace => {
-                            t.pop();
-                        }
-                        Key::ArrowUp | Key::ArrowDown => {
-                            out = Some(kept(now(t, out) + if key == Key::ArrowUp { by } else { -by }));
-                            t.clear();
-                        }
-                        Key::Enter => done = true,
-                        Key::Escape => {
-                            t.clear();
-                            done = true;
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
-        }
-        // The wheel steps while the pointer's on it (and isn't scrolling
-        // the page then).
-        if resp.hovered() {
+                _ => true,
+            });
+            by
+        });
+        if ui.rect_contains_pointer(rect) {
             let dy = ui.input(|i| i.smooth_scroll_delta.y);
             if dy != 0.0 {
                 ui.input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
                 let wheel = ui.data(|d| d.get_temp::<f32>(id.with("wheel"))).unwrap_or(0.0) + dy;
                 let steps = (wheel / 40.0).trunc();
-                if steps != 0.0 {
-                    out = Some(kept(now(t, out) + steps as i64));
-                    t.clear();
-                }
+                by += steps as i64;
                 ui.data_mut(|d| d.insert_temp(id.with("wheel"), wheel - steps * 40.0));
             }
         }
-        if done {
-            if let Ok(v) = t.parse::<i64>() {
-                out = Some(kept(v));
-            }
-            typed = None;
-            resp.surrender_focus();
+        if by != 0 {
+            let now = typed.as_deref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(value);
+            let v = kept(now + by);
+            out = Some(v);
+            typed = Some(v.to_string());
+            choose_all(ui.ctx(), id, &v.to_string());
         }
-    } else if let Some(t) = typed.take() {
-        // Clicked away or tabbed on: what was typed counts.
-        if let Ok(v) = t.parse::<i64>() {
+    }
+    keep_to_number(ui, id, false, minus);
+    let hv = theme::toggle(ui.ctx(), id.with("hv"), ui.rect_contains_pointer(rect) && !focused, theme::FAST);
+    let fc = theme::toggle(ui.ctx(), id.with("fc"), focused, theme::FAST);
+    ui.painter().rect_filled(rect, RADIUS, theme::mix(p.control, p.control_h, hv));
+    if fc > 0.0 {
+        ui.painter().rect_stroke(rect, RADIUS, Stroke::new(1.5, theme::fade(p.text2, fc)), StrokeKind::Inside);
+    }
+    let mut text = typed.clone().unwrap_or_else(|| value.to_string());
+    let inner = rect.shrink2(vec2(6.0, 0.0));
+    let mut tui = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    // A number's box: what goes in is kept to a number (`keep_to_number`).
+    #[allow(clippy::disallowed_methods)]
+    let edited = egui::TextEdit::singleline(&mut text)
+        .id(id)
+        .frame(egui::Frame::NONE)
+        .font(theme::font(13.0, W::Medium))
+        .text_color(p.text)
+        .horizontal_align(egui::Align::Center)
+        .desired_width(inner.width())
+        .char_limit(longest)
+        .margin(Margin::ZERO)
+        .show(&mut tui);
+    let text = number_typing(&text, false, minus);
+    let resp = edited.response.response;
+    if resp.gained_focus() {
+        // All of it chosen: what's typed replaces it.
+        typed = Some(value.to_string());
+        choose_all(ui.ctx(), id, &value.to_string());
+    } else if resp.has_focus() {
+        typed = Some(text);
+    }
+    // Enter, Tab or clicking away: what's typed counts. Esc: put back.
+    if resp.lost_focus() {
+        let esc = ui.input(|i| i.key_pressed(Key::Escape));
+        if let Some(v) = typed.take().filter(|_| !esc).and_then(|t| t.parse::<i64>().ok()) {
             out = Some(kept(v));
         }
     }
@@ -2757,32 +2945,14 @@ pub fn signed_box(ui: &mut egui::Ui, id: egui::Id, value: i64, range: std::ops::
         }
         None => d.remove::<String>(key),
     });
-
-    // The box; the number, chosen until typing starts, then what's typed
-    // with a caret after it.
-    let focused = resp.has_focus();
-    let hv = theme::toggle(ui.ctx(), id.with("hv"), resp.hovered() && !focused, theme::FAST);
-    let fc = theme::toggle(ui.ctx(), id.with("fc"), focused, theme::FAST);
-    let painter = ui.painter_at(rect.expand(2.0));
-    painter.rect_filled(rect, RADIUS, theme::mix(p.control, p.control_h, hv));
-    if fc > 0.0 {
-        painter.rect_stroke(rect, RADIUS, Stroke::new(1.5, theme::fade(p.text2, fc)), StrokeKind::Inside);
-    }
-    let typing = typed.as_ref().filter(|t| !t.is_empty());
-    let text = typing.cloned().unwrap_or_else(|| out.unwrap_or(value).to_string());
-    let font = theme::font(13.0, W::Medium);
-    let g = painter.layout_no_wrap(text, font.clone(), p.text);
-    let at = Pos2::new(rect.center().x - g.size().x / 2.0, rect.center().y - g.size().y / 2.0);
-    if focused && typing.is_none() {
-        painter.rect_filled(Rect::from_min_size(at - vec2(3.0, 2.0), g.size() + vec2(6.0, 4.0)), 3, p.seg_on);
-    }
-    let x = at.x + g.size().x;
-    painter.galley(at, g, p.text);
-    if focused && typing.is_some() {
-        let h = font.size * 0.6;
-        painter.vline(x + 1.5, rect.center().y - h..=rect.center().y + h, Stroke::new(1.5, p.text));
-    }
     out.filter(|v| *v != value)
+}
+
+/// All of text box `id`'s `text` chosen, so what's typed next replaces it.
+fn choose_all(ctx: &egui::Context, id: egui::Id, text: &str) {
+    let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(text.chars().count()))));
+    state.store(ctx, id);
 }
 
 // --- Pointer ---
@@ -2941,6 +3111,33 @@ mod tests {
         assert_eq!(following_side(607.5, &r), 608);
         assert_eq!(following_side(9000.0, &r), 4096);
         assert_eq!(following_side(64.0, &(64..=3600)), 64);
+    }
+
+    /// A double-click a moment after a click (one moving a slider, say):
+    /// egui counts its clicks three, no double-click to it; it's one.
+    #[test]
+    fn a_double_click_just_after_a_click_counts() {
+        let ctx = egui::Context::default();
+        ctx.options_mut(|o| o.input_options.max_double_click_delay = 0.5);
+        let at = egui::pos2(50.0, 20.0);
+        let (mut egui_said, mut we_said) = (0, 0);
+        let mut frame = |time: f64, events: Vec<egui::Event>| {
+            let raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0))), time: Some(time), events, ..Default::default() };
+            let mut out = ctx.run_ui(raw, |ui| {
+                let resp = ui.allocate_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(100.0, 40.0)), egui::Sense::click_and_drag());
+                egui_said += i32::from(resp.double_clicked());
+                we_said += i32::from(double_clicked(&resp));
+            });
+            out.textures_delta.clear();
+        };
+        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(0.0, vec![egui::Event::PointerMoved(at)]);
+        // A click; then a double-click, its clicks 0.15 s apart.
+        for (t, pressed) in [(0.02, true), (0.05, false), (0.68, true), (0.70, false), (0.83, true), (0.85, false)] {
+            frame(t, vec![button(pressed)]);
+        }
+        assert_eq!(egui_said, 0, "egui counted three");
+        assert_eq!(we_said, 1);
     }
 
     /// A click outside a dialog closes it without clicking the page behind.
@@ -3217,11 +3414,13 @@ mod tests {
     }
 
     /// Typing replaces the number; arrows add or take one (Shift: ten); Tab
-    /// goes on to the next box; Esc puts it back.
+    /// goes on to the next box; Esc puts it back. Pasted, a number goes in as
+    /// typed, what isn't one left out.
     #[test]
     fn number_boxes_type_and_step() {
         use egui::{Event, Key};
         assert_eq!(number_boxes(first_box_then(vec![Event::Text("21".into()), key(Key::Enter, false)])), [21, 9]);
+        assert_eq!(number_boxes(first_box_then(vec![Event::Paste("4 px2".into()), key(Key::Enter, false)])), [42, 9]);
         assert_eq!(number_boxes(first_box_then(vec![key(Key::ArrowUp, false), key(Key::ArrowUp, true)])), [27, 9]);
         assert_eq!(number_boxes(first_box_then(vec![key(Key::ArrowDown, false)])), [15, 9]);
         assert_eq!(number_boxes(first_box_then(vec![Event::Text("21".into()), key(Key::Tab, false), Event::Text("10".into()), key(Key::Enter, false)])), [21, 10]);
@@ -3238,5 +3437,47 @@ mod tests {
             assert_eq!(k(&["Option", "F10"]), format!("{}F10", icon::OPTION));
         }
         assert_eq!(k(&["F8"]), "F8");
+    }
+    /// A menu with a heading shows all of its rows. egui sizes a menu by its
+    /// first frame, in which the heading measured shorter than it is: its
+    /// last row was left half under a scroll bar.
+    #[test]
+    fn a_menu_with_a_heading_shows_its_last_row() {
+        fn row(shape: &egui::Shape, clip: Rect) -> Option<(Rect, Rect)> {
+            match shape {
+                egui::Shape::Text(t) if t.galley.text() == "Ideas others asked for" => Some((t.galley.rect.translate(t.pos.to_vec2()), clip)),
+                egui::Shape::Vec(v) => v.iter().find_map(|s| row(s, clip)),
+                _ => None,
+            }
+        }
+        let ctx = egui::Context::default();
+        apply(&ctx);
+        let button = Rect::from_min_size(Pos2::new(20.0, 20.0), vec2(80.0, 24.0));
+        let frame = |events: Vec<egui::Event>, time: f64| {
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(900.0, 600.0))), max_texture_side: Some(8192), time: Some(time), events, ..Default::default() };
+            let mut out = ctx.run_ui(raw, |ui| {
+                let resp = ui.interact(button, egui::Id::new("a_menu"), egui::Sense::click());
+                menu_popup(&resp, true, 240.0, |ui| {
+                    menu_head(ui, "On GitHub, with a free account");
+                    Item::new("Report a bug").show(ui);
+                    Item::new("Suggest an idea").show(ui);
+                    menu_sep(ui);
+                    Item::new("Ideas others asked for").show(ui);
+                });
+            });
+            out.textures_delta.clear();
+            // The last row's words, and the part of the menu that shows.
+            out.shapes.iter().find_map(|c| row(&c.shape, c.clip_rect))
+        };
+        let at = button.center();
+        let click = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(vec![], 0.0);
+        frame(vec![egui::Event::PointerMoved(at), click(true), click(false)], 0.1);
+        let mut last = None;
+        for i in 2..8 {
+            last = frame(vec![], 0.1 * f64::from(i));
+        }
+        let (words, shown) = last.expect("the menu's last row");
+        assert!(shown.contains_rect(words), "its last row is cut off: {words:?}, of which {shown:?} shows");
     }
 }

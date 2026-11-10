@@ -327,6 +327,13 @@ pub fn claim() -> Option<Option<std::net::TcpListener>> {
 /// while Vibe Clip ran showed Vibe Clip instead, and the other way round.
 const PORT: u16 = 52141;
 
+/// Another Vibe Clip runs (or something else has its port): asked before
+/// [`claim`], which may then show that one and exit.
+#[cfg(any(windows, target_os = "linux"))]
+pub fn another_running() -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", PORT)).is_err()
+}
+
 fn claim_on(port: u16) -> Option<Option<std::net::TcpListener>> {
     use std::io::Write;
     match std::net::TcpListener::bind(("127.0.0.1", port)) {
@@ -348,7 +355,14 @@ fn claim_on(port: u16) -> Option<Option<std::net::TcpListener>> {
 /// Run from Cargo's build folder (`cargo run`, with `--release` or not): a
 /// build of your own, not an installed Vibe Clip.
 fn from_build_folder() -> bool {
-    std::env::current_exe().is_ok_and(|exe| exe.ancestors().skip(1).take(3).any(|dir| dir.join("CACHEDIR.TAG").is_file()))
+    build_folder().is_some()
+}
+
+/// The Cargo build folder (`target`) this copy runs from, if it's a build of
+/// your own.
+pub(crate) fn build_folder() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    exe.ancestors().skip(1).take(3).find(|dir| dir.join("CACHEDIR.TAG").is_file()).map(std::path::Path::to_path_buf)
 }
 
 /// A build of your own, started while another Vibe Clip runs (the installed
@@ -380,8 +394,9 @@ fn take_over(mut running: std::net::TcpStream, port: u16) -> Option<Option<std::
 }
 
 /// Answer later launches: each asks this one to show itself, or (a build of
-/// your own, see [`take_over`]) to quit.
-pub fn serve(listener: std::net::TcpListener, ctx: &egui::Context, tx: mpsc::Sender<Cmd>) {
+/// your own, see [`take_over`]) to quit. And a control (a Stream Deck)
+/// that says `ctrl` goes to `control`, to be served on its own thread.
+pub fn serve(listener: std::net::TcpListener, ctx: &egui::Context, tx: mpsc::Sender<Cmd>, control: Option<crate::control::Door>) {
     use std::io::{Read, Write};
     let ctx = ctx.clone();
     let _ = std::thread::Builder::new().name("single instance".into()).spawn(move || {
@@ -393,6 +408,12 @@ pub fn serve(listener: std::net::TcpListener, ctx: &egui::Context, tx: mpsc::Sen
                 continue;
             }
             match &word {
+                b"ctrl" => {
+                    if let Some(door) = &control {
+                        door.open(stream);
+                    }
+                    continue;
+                }
                 b"show" => {
                     // Hidden (KDE under Wayland): the UI doesn't run to hear it.
                     #[cfg(target_os = "linux")]
@@ -435,7 +456,7 @@ mod tests {
     fn answers_show_and_quit() {
         let port = spare_port();
         let (tx, rx) = mpsc::channel();
-        serve(TcpListener::bind(("127.0.0.1", port)).unwrap(), &egui::Context::default(), tx);
+        serve(TcpListener::bind(("127.0.0.1", port)).unwrap(), &egui::Context::default(), tx, None);
         let mut show = TcpStream::connect(("127.0.0.1", port)).unwrap();
         show.write_all(b"show").unwrap();
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(Cmd::Open));

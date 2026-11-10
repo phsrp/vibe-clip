@@ -511,6 +511,12 @@ impl Latest {
         self.note_frame_at(at);
     }
 
+    /// Nothing to show (a display that isn't there): it's left out of the
+    /// frame until its next picture.
+    pub(crate) fn forget(&self) {
+        self.has_frame.store(false, Ordering::Release);
+    }
+
     /// Show black, as a full-size frame.
     pub(crate) fn clear(&self) -> Result<()> {
         unsafe {
@@ -588,8 +594,132 @@ pub(crate) struct Capture {
     closed: Arc<AtomicBool>,
     /// When the last frame arrived (when it started, before the first).
     last_frame: Arc<Mutex<std::time::Instant>>,
+    /// Draws the cursor again when only it moved (see [`Overlay`]).
+    ticker: Option<std::thread::JoinHandle<()>>,
+    stop: Arc<AtomicBool>,
 }
 unsafe impl Send for Capture {}
+
+/// What a [`Capture`] captures.
+#[derive(Clone, Copy)]
+pub(crate) enum Of {
+    /// A display (`item` made by [`monitor_item`]).
+    Display(HMONITOR),
+    /// A window (`item` made by [`window_item`]), its client area only (no
+    /// title bar or borders).
+    Window(HWND),
+    /// A web page's window (see `browser`), as a window, but never with the
+    /// cursor: it's drawn off every display, where the cursor never is.
+    Page(HWND),
+}
+
+/// The cursor, drawn by us over Windows' capture, which leaves it out.
+///
+/// Windows can draw it in itself, but while it does, a game in fullscreen
+/// can lose its own cursor: it's gone from the game, on the screen, while
+/// it's captured (CS2, Valorant, Deadlock; issue #33). So it's drawn here as
+/// over the capture hook's and Desktop Duplication's pictures: each frame
+/// goes into `clean`, then up into the `Latest` with the cursor drawn on it.
+/// The cursor moving brings no frame now, so `clean` goes up again with it
+/// where it moved to while no frame comes (a still desktop or menu).
+struct Overlay {
+    quad: super::quad::Quad,
+    /// Draws into the `Latest`.
+    target: ID3D11RenderTargetView,
+    /// The last frame, without the cursor, `size` of it from its top-left corner.
+    clean: ID3D11Texture2D,
+    size: (u32, u32),
+    layer: super::cursor::CursorLayer,
+    of: Of,
+    /// The window's process, which has to be in focus for the cursor to show.
+    pid: Option<u32>,
+    /// The cursor as last drawn.
+    drawn: Option<((i32, i32), isize)>,
+}
+unsafe impl Send for Overlay {}
+
+impl Overlay {
+    fn new(gpu: &Gpu, latest: &Latest, of: Of) -> Result<Self> {
+        let pid = match of {
+            Of::Window(window) | Of::Page(window) => {
+                let mut pid = 0u32;
+                unsafe { windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(window, Some(&mut pid)) };
+                Some(pid)
+            }
+            Of::Display(_) => None,
+        };
+        let bind = (D3D11_BIND_SHADER_RESOURCE.0 | D3D11_BIND_RENDER_TARGET.0) as u32;
+        Ok(Self {
+            quad: super::quad::Quad::new(gpu)?,
+            target: super::quad::target_view(gpu, &latest.texture)?,
+            clean: gpu.texture(latest.width, latest.height, DXGI_FORMAT_B8G8R8A8_UNORM, bind, D3D11_USAGE_DEFAULT, 0)?,
+            size: (0, 0),
+            layer: super::cursor::CursorLayer::new(),
+            of,
+            pid,
+            drawn: None,
+        })
+    }
+
+    /// The cursor isn't as it was last drawn: moved, another, or shown or
+    /// hidden since.
+    fn moved(&self) -> bool {
+        physical(|| super::cursor::showing(self.pid)) != self.drawn
+    }
+
+    /// The window is hidden (tabbed out, minimized): the away screen goes up
+    /// over its picture then, and nothing may cover that.
+    fn hidden(&self) -> bool {
+        matches!(self.of, Of::Window(window) if super::system::window_hidden(window))
+    }
+
+    /// `clean` up into `latest`, with the cursor drawn on it.
+    fn put_up(&mut self, gpu: &Gpu, latest: &Latest) {
+        let (w, h) = self.size;
+        if w == 0 || h == 0 {
+            return;
+        }
+        let _held = gpu.exclusive();
+        let region = D3D11_BOX { left: 0, top: 0, front: 0, right: w, bottom: h, back: 1 };
+        unsafe { gpu.context.CopySubresourceRegion(&latest.texture, 0, 0, 0, 0, &self.clean, 0, Some(&region)) };
+        physical(|| {
+            self.drawn = super::cursor::showing(self.pid);
+            match self.of {
+                Of::Window(window) => self.layer.draw(gpu, &self.quad, latest, &self.target, window, self.pid.unwrap_or(0), self.size),
+                Of::Display(monitor) => {
+                    if let Some((origin, display)) = monitor_rect(monitor) {
+                        self.layer.draw_on_screen(gpu, &self.quad, latest, &self.target, origin, display, self.size);
+                    }
+                }
+                Of::Page(_) => {}
+            }
+        });
+        unsafe { gpu.context.Flush() };
+    }
+}
+
+/// `f` run in physical pixels (per-monitor DPI aware), as the picture is,
+/// whatever this thread was: where the cursor is drawn and where it was last
+/// drawn are told in the same pixels.
+fn physical<T>(f: impl FnOnce() -> T) -> T {
+    use windows::Win32::UI::HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetThreadDpiAwarenessContext};
+    let previous = unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+    let out = f();
+    unsafe { SetThreadDpiAwarenessContext(previous) };
+    out
+}
+
+/// Where a display is on the desktop and how big, in physical pixels (asked
+/// on a thread that's per-monitor DPI aware).
+fn monitor_rect(monitor: HMONITOR) -> Option<((i32, i32), (u32, u32))> {
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFO};
+    let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
+        return None;
+    }
+    let r = info.rcMonitor;
+    Some(((r.left, r.top), ((r.right - r.left).max(1) as u32, (r.bottom - r.top).max(1) as u32)))
+}
 
 fn check_supported() -> Result<()> {
     if !GraphicsCaptureSession::IsSupported().unwrap_or(false) {
@@ -611,9 +741,14 @@ pub(crate) fn window_item(window: HWND) -> Result<GraphicsCaptureItem> {
 }
 
 impl Capture {
-    /// Capture `item` into `latest`, at most `fps` × 4 times a second. For a
-    /// window, only its client area is kept (no title bar or borders).
-    pub(crate) fn start(gpu: &Gpu, item: &GraphicsCaptureItem, latest: &Arc<Latest>, window: Option<HWND>, fps: u32) -> Result<Self> {
+    /// Capture `item`, which is `of`, into `latest`, at most `fps` × 4 times
+    /// a second. For a window, only its client area is kept (no title bar or
+    /// borders).
+    pub(crate) fn start(gpu: &Gpu, item: &GraphicsCaptureItem, latest: &Arc<Latest>, of: Of, fps: u32) -> Result<Self> {
+        let window = match of {
+            Of::Window(window) | Of::Page(window) => Some(window),
+            Of::Display(_) => None,
+        };
         let size = item.Size()?;
         let dxgi: IDXGIDevice = gpu.device.cast()?;
         let winrt_device: IDirect3DDevice = unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi)? }.cast()?;
@@ -621,10 +756,14 @@ impl Capture {
         // Free-threaded: frames arrive on a system thread, no message loop needed.
         let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(&winrt_device, format, 2, size)?;
         let session = pool.CreateCaptureSession(item)?;
-        // `VIBECLIP_CURSOR_CAPTURE=0` leaves the cursor out: a test for a
-        // cursor that vanishes in some games while they're captured.
-        let cursor = std::env::var_os("VIBECLIP_CURSOR_CAPTURE").is_none_or(|v| v != "0");
-        let _ = session.SetIsCursorCaptureEnabled(cursor);
+        // The cursor is drawn by us (see `Overlay`), not by Windows.
+        // `VIBECLIP_CURSOR_CAPTURE=1` has Windows draw it, as it used to.
+        // Before Windows 10 2004 it can't be left out: Windows draws it then,
+        // and a second one isn't drawn over it.
+        let by_windows = std::env::var_os("VIBECLIP_CURSOR_CAPTURE").is_some_and(|v| v == "1");
+        let by_windows = session.SetIsCursorCaptureEnabled(by_windows).is_err() || by_windows;
+        let overlay = if by_windows || matches!(of, Of::Page(_)) { None } else { Some(Arc::new(Mutex::new(Overlay::new(gpu, latest, of)?))) };
+        let overlay2 = overlay.clone();
         // Windows 11: no yellow "being captured" border.
         let _ = session.SetIsBorderRequired(false);
         // Not every display refresh (540 a second on a 540 Hz monitor), just
@@ -682,18 +821,26 @@ impl Capture {
                     return Ok(None);
                 }
                 let region = D3D11_BOX { left: x, top: y, front: 0, right: x + w, bottom: y + h, back: 1 };
+                // Into `latest`, or kept without the cursor, to go up into
+                // `latest` with the cursor drawn on it.
+                let mut overlay = overlay2.as_ref().map(|o| o.lock().unwrap());
+                let into = overlay.as_ref().map_or(&latest2.texture, |o| &o.clean);
                 // Too big for `latest` (a display whose mode grew after the
                 // capture started, a window bigger than every display):
                 // shrunk to fit, keeping its shape, not cut off.
                 let fitted = super::quad::fit_within(w, h, latest2.width, latest2.height);
                 if fitted == (w, h) {
-                    unsafe { gpu2.context.CopySubresourceRegion(&latest2.texture, 0, 0, 0, 0, &tex, 0, Some(&region)) };
+                    unsafe { gpu2.context.CopySubresourceRegion(into, 0, 0, 0, 0, &tex, 0, Some(&region)) };
                 } else {
                     let mut shrink = shrink.lock().unwrap();
                     if shrink.is_none() {
-                        *shrink = Some(Shrink::new(gpu2, &latest2)?);
+                        *shrink = Some(Shrink::new(gpu2, into)?);
                     }
-                    shrink.as_mut().unwrap().draw(gpu2, &tex, region, fitted, &latest2)?;
+                    shrink.as_mut().unwrap().draw(gpu2, &tex, region, fitted, (latest2.width, latest2.height))?;
+                }
+                if let Some(o) = overlay.as_mut() {
+                    o.size = fitted;
+                    o.put_up(gpu2, &latest2);
                 }
                 Ok(Some(fitted))
             })();
@@ -733,7 +880,42 @@ impl Capture {
             Ok(())
         }))?;
         session.StartCapture()?;
-        Ok(Self { pool, session, item: item.clone(), closed_token, closed, last_frame })
+        let stop = Arc::new(AtomicBool::new(false));
+        let ticker = overlay.map(|overlay| {
+            let (gpu, latest, last_frame, stop) = (gpu.clone(), latest.clone(), last_frame.clone(), stop.clone());
+            // As often as the recording's frames: a cursor that moved within
+            // a frame goes up with the next anyway.
+            let every = std::time::Duration::from_secs_f64(1.0 / fps.max(1) as f64);
+            // The same picture with the cursor moved counts as a new one for
+            // frame blending only once nothing else has come for a while (a
+            // still screen), as with Desktop Duplication: else a moving cursor
+            // would add a picture between the game's own.
+            let quiet = 2 * every;
+            std::thread::spawn(move || {
+                // The last time a picture with only the cursor moved counted.
+                let mut counted: Option<std::time::Instant> = None;
+                while !stop.load(Ordering::Relaxed) {
+                    std::thread::sleep(every);
+                    let since = last_frame.lock().unwrap().elapsed();
+                    if since < every {
+                        continue;
+                    }
+                    let mut o = overlay.lock().unwrap();
+                    // Not over a still (the away screen) or black, nor over a
+                    // window that's hidden, which the away screen covers.
+                    if o.size.0 == 0 || latest.waiting() || o.hidden() || !o.moved() {
+                        continue;
+                    }
+                    o.put_up(&gpu, &latest);
+                    let counts = since > quiet && counted.is_none_or(|t| t.elapsed() > quiet);
+                    if counts {
+                        counted = Some(std::time::Instant::now());
+                    }
+                    latest.mark(o.size, super::system::host_now(), counts);
+                }
+            })
+        });
+        Ok(Self { pool, session, item: item.clone(), closed_token, closed, last_frame, ticker, stop })
     }
 
     /// How long since the last frame (since the capture started, before the
@@ -754,6 +936,10 @@ impl Drop for Capture {
         let _ = self.item.RemoveClosed(self.closed_token);
         let _ = self.session.Close();
         let _ = self.pool.Close();
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(t) = self.ticker.take() {
+            let _ = t.join();
+        }
     }
 }
 
@@ -764,7 +950,7 @@ impl Drop for Capture {
 /// time a frame is too big.
 struct Shrink {
     quad: super::quad::Quad,
-    /// Draws into the `Latest`.
+    /// Draws into the `Latest` (or the copy of it the cursor goes on).
     target: ID3D11RenderTargetView,
     /// The copy, a view to read it through, and its size (made again when
     /// that changes).
@@ -773,12 +959,14 @@ struct Shrink {
 unsafe impl Send for Shrink {}
 
 impl Shrink {
-    fn new(gpu: &Gpu, latest: &Latest) -> Result<Self> {
-        Ok(Self { quad: super::quad::Quad::new(gpu)?, target: super::quad::target_view(gpu, &latest.texture)?, copy: None })
+    /// Drawing into `into`: the `Latest`'s texture, or one as big.
+    fn new(gpu: &Gpu, into: &ID3D11Texture2D) -> Result<Self> {
+        Ok(Self { quad: super::quad::Quad::new(gpu)?, target: super::quad::target_view(gpu, into)?, copy: None })
     }
 
-    /// Draw `region` of `frame` into `latest`, `size` big, from its top-left corner.
-    fn draw(&mut self, gpu: &Gpu, frame: &ID3D11Texture2D, region: D3D11_BOX, size: (u32, u32), latest: &Latest) -> Result<()> {
+    /// Draw `region` of `frame` into its texture (`whole` big), `size` big,
+    /// from its top-left corner.
+    fn draw(&mut self, gpu: &Gpu, frame: &ID3D11Texture2D, region: D3D11_BOX, size: (u32, u32), whole: (u32, u32)) -> Result<()> {
         let part = (region.right - region.left, region.bottom - region.top);
         if self.copy.as_ref().is_none_or(|(_, _, s)| *s != part) {
             let texture = gpu.texture(part.0, part.1, DXGI_FORMAT_B8G8R8A8_UNORM, D3D11_BIND_SHADER_RESOURCE.0 as u32, D3D11_USAGE_DEFAULT, 0)?;
@@ -793,7 +981,7 @@ impl Shrink {
             clip: RECT { left: 0, top: 0, right: size.0 as i32, bottom: size.1 as i32 },
             turns: 0,
         };
-        self.quad.draw(gpu, &self.target, (latest.width, latest.height), view, &at, true);
+        self.quad.draw(gpu, &self.target, whole, view, &at, true);
         Ok(())
     }
 }
@@ -839,8 +1027,9 @@ impl TexturePool {
 
 /// Scales and converts the latest captured image into one of its targets,
 /// put where the screen's placement says (its box, black around it), with
-/// the webcam over it or under it if there is one. Targets are NV12 frames
-/// for the encoder, or an RGB picture for the preview.
+/// the other layers (webcams, other displays: `super::layers::Feeds`) over
+/// it or under it as their list says. Targets are NV12 frames for the
+/// encoder, or an RGB picture for the preview.
 pub(crate) struct Converter {
     gpu: Gpu,
     width: u32,
@@ -850,9 +1039,51 @@ pub(crate) struct Converter {
     screen: crate::SharedScreen,
     video: ID3D11VideoContext,
     base: Layer,
-    overlay: Option<(Layer, crate::webcam::SharedPlacement)>,
+    /// The other layers, if any: their pictures, and the processors drawing
+    /// each (made as each turns up), as of the feeds' generation.
+    feeds: Option<Arc<super::layers::Feeds>>,
+    drawn: std::cell::RefCell<(u64, Vec<(u64, Layer)>)>,
+    /// What a layer's processor is made for.
+    targets: Vec<ID3D11Texture2D>,
+    yuv: bool,
+    fps: u32,
+    /// While a layer's blended by its alpha (a picture, a colour): where the
+    /// frame's made first (see [`Canvas`]), once one has been.
+    canvas: std::cell::RefCell<Option<Canvas>>,
 }
 unsafe impl Send for Converter {}
+
+/// One layer as it's drawn into a frame: which (its id; the main picture's
+/// is 0), the part of its picture, where it goes, turned and mirrored so,
+/// and whether it's blended by its alpha.
+struct Placed<'a> {
+    id: u64,
+    layer: &'a Layer,
+    source: RECT,
+    dest: RECT,
+    turns: u8,
+    mirror: (bool, bool),
+    blend: bool,
+}
+
+/// The video processor can't blend a picture by its alpha over what's
+/// drawn: each draw covers its place. With a layer that's blended, the frame
+/// is made in an RGB picture of its own first, the frame's size: the layers
+/// that cover their place drawn into it by processors of their own, those
+/// blended drawn over them by the GPU's shaders; then that's converted into
+/// the target. Only then: without one, layers go straight into the target,
+/// as they always have.
+struct Canvas {
+    picture: Arc<Latest>,
+    target: ID3D11RenderTargetView,
+    quad: super::quad::Quad,
+    /// The canvas into the targets.
+    out: Layer,
+    /// Each layer that covers its place, into the canvas, by id.
+    layers: Vec<(u64, Layer)>,
+    /// Each blended layer's picture, as the shaders read it, by id.
+    views: Vec<(u64, Arc<Latest>, ID3D11ShaderResourceView)>,
+}
 
 /// One picture drawn into the targets: its own video processor (with state for
 /// where it goes), reading `source`.
@@ -968,14 +1199,14 @@ impl Layer {
 }
 
 impl Converter {
-    /// `overlay`: the webcam's picture and where it goes, drawn over `source`
-    /// (or under it). `screen`: where `source` (its crop, if any) goes in
-    /// the `width`×`height` frame.
+    /// `feeds`: the other layers' pictures, and their order and places,
+    /// drawn over `source` or under it (none: `source` alone). `screen`:
+    /// where `source` (its crop, if any) goes in the `width`×`height` frame.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         gpu: &Gpu,
         source: &Arc<Latest>,
-        overlay: Option<(&Arc<Latest>, crate::webcam::SharedPlacement)>,
+        feeds: Option<Arc<super::layers::Feeds>>,
         targets: &[ID3D11Texture2D],
         yuv: bool,
         width: u32,
@@ -985,59 +1216,184 @@ impl Converter {
     ) -> Result<Self> {
         let video: ID3D11VideoContext = gpu.context.cast()?;
         let base = Layer::new(gpu, &video, source, targets, yuv, width, height, fps)?;
-        let overlay = match overlay {
-            Some((cam, placement)) => Some((Layer::new(gpu, &video, cam, targets, yuv, width, height, fps)?, placement)),
-            None => None,
-        };
-        Ok(Self { gpu: gpu.clone(), width, height, screen, video, base, overlay })
+        Ok(Self {
+            gpu: gpu.clone(),
+            width,
+            height,
+            screen,
+            video,
+            base,
+            feeds,
+            drawn: std::cell::RefCell::new((u64::MAX, Vec::new())),
+            targets: targets.to_vec(),
+            yuv,
+            fps,
+            canvas: std::cell::RefCell::new(None),
+        })
     }
 
-    /// Convert the latest captured image (and the webcam over it, or under
-    /// it) into target `slot`.
+    /// A processor for each layer's picture, as the feeds have them now:
+    /// made for a picture that's new, let go of for one that's gone.
+    fn sync(&self, feeds: &super::layers::Feeds, layers: &[crate::Layer]) {
+        let generation = feeds.generation();
+        let mut drawn = self.drawn.borrow_mut();
+        if drawn.0 == generation {
+            return;
+        }
+        let mut next = Vec::new();
+        for l in layers {
+            let Some(picture) = feeds.picture(l.id) else { continue };
+            if let Some(i) = drawn.1.iter().position(|(id, layer)| *id == l.id && Arc::ptr_eq(&layer.source, &picture)) {
+                next.push(drawn.1.swap_remove(i));
+                continue;
+            }
+            match Layer::new(&self.gpu, &self.video, &picture, &self.targets, self.yuv, self.width, self.height, self.fps) {
+                Ok(layer) => next.push((l.id, layer)),
+                Err(e) => eprintln!("can't draw a layer: {e:#}"),
+            }
+        }
+        *drawn = (generation, next);
+    }
+
+    /// Convert the latest captured image, and the other layers over it or
+    /// under it, into target `slot`.
     pub(crate) fn convert(&self, slot: usize) -> Result<()> {
-        let placed = *self.screen.lock().unwrap();
-        let (cw, ch) = self.base.source.content();
+        let frame = (self.width, self.height);
         let rect = |[x, y, w, h]: [u32; 4]| RECT { left: x as i32, top: y as i32, right: (x + w) as i32, bottom: (y + h) as i32 };
-        let ([sx, sy, sw, sh], [dx, dy, dw, dh]) = placed.place((cw, ch), (self.width, self.height));
-        let screen = (sw > 0 && sh > 0 && dw > 0 && dh > 0).then(|| (rect([sx, sy, sw, sh]), rect([dx, dy, dw, dh])));
         let full = RECT { left: 0, top: 0, right: self.width as i32, bottom: self.height as i32 };
-        // The webcam, where it shows.
-        let cam = self.overlay.as_ref().filter(|(layer, _)| layer.source.has_frame()).and_then(|(layer, placement)| {
-            let p = *placement.lock().unwrap();
-            overlay_rects(p, layer.source.content(), self.width, self.height).map(|(source, dest)| (layer, source, dest, (p.flip_h, p.flip_v)))
+        let layers = self.feeds.as_ref().map(|f| {
+            let layers = f.layers();
+            self.sync(f, &layers);
+            layers
         });
-        // Only `target` is written: all of the frame (black around the
-        // picture), or just the picture's place, over what's there.
-        let draw_cam = |target: Option<RECT>| {
-            if let Some((layer, source, dest, mirror)) = &cam
-                && let Err(e) = layer.draw(&self.video, slot, *source, *dest, target.unwrap_or(*dest), 0, *mirror)
-            {
-                eprintln!("couldn't draw the webcam: {e}");
-            }
-        };
-        let result = match screen {
-            // In front of the webcam: the webcam first, then the screen over it.
-            Some((source, dest)) if placed.in_front && cam.is_some() => {
-                draw_cam(Some(full));
-                self.base.draw(&self.video, slot, source, dest, dest, placed.turns, (placed.flip_h, placed.flip_v))
-            }
-            Some((source, dest)) => {
-                let drawn = self.base.draw(&self.video, slot, source, dest, full, placed.turns, (placed.flip_h, placed.flip_v));
-                if drawn.is_ok() {
-                    draw_cam(None);
+        let main = [crate::Layer { id: 0, source: crate::LayerSource::Main }];
+        let drawn = self.drawn.borrow();
+        let picture = |id: u64| drawn.1.iter().find(|(i, _)| *i == id).map(|(_, l)| l).filter(|l| l.source.has_frame());
+        let all = layers.as_deref().unwrap_or(&main);
+        // Anything blended over what's under it (a picture, words, a colour,
+        // a page) is drawn on a full-colour canvas, all of it then converted
+        // at once: there every layer goes on any pixel (words moved a pixel
+        // move a pixel). Drawn straight into the encoder's 4:2:0 colour, on
+        // even ones.
+        let on_canvas = all.iter().any(|l| l.source.blended() && l.shown() && picture(l.id).is_some());
+        let even = !on_canvas;
+        // Each layer that shows, bottom first: the part of its picture used
+        // and where it goes.
+        let mut placed: Vec<Placed> = Vec::new();
+        for l in all {
+            match &l.source {
+                crate::LayerSource::Main => {
+                    let p = *self.screen.lock().unwrap();
+                    let ([sx, sy, sw, sh], [dx, dy, dw, dh]) = p.place_on(self.base.source.content(), frame, even);
+                    if sw > 0 && sh > 0 && dw > 0 && dh > 0 {
+                        placed.push(Placed { id: 0, layer: &self.base, source: rect([sx, sy, sw, sh]), dest: rect([dx, dy, dw, dh]), turns: p.turns, mirror: (p.flip_h, p.flip_v), blend: false });
+                    }
                 }
-                drawn
+                crate::LayerSource::Camera { placement: p, .. } => {
+                    // Turned as it's uploaded (`CameraLayer::pull`).
+                    let Some(layer) = picture(l.id).filter(|_| !p.is_hidden()) else { continue };
+                    if let Some((source, dest)) = overlay_rects(*p, layer.source.content(), self.width, self.height) {
+                        placed.push(Placed { id: l.id, layer, source, dest, turns: 0, mirror: (p.flip_h, p.flip_v), blend: false });
+                    }
+                }
+                crate::LayerSource::Display { placement: p, .. }
+                | crate::LayerSource::Window { placement: p, .. }
+                | crate::LayerSource::Picture { placement: p, .. }
+                | crate::LayerSource::Colour { placement: p, .. }
+                | crate::LayerSource::Browser { placement: p, .. }
+                | crate::LayerSource::Animation { placement: p, .. }
+                | crate::LayerSource::Video { placement: p, .. } => {
+                    let Some(layer) = picture(l.id) else { continue };
+                    let ([sx, sy, sw, sh], [dx, dy, dw, dh]) = p.place_on(layer.source.content(), frame, even);
+                    if sw > 0 && sh > 0 && dw > 0 && dh > 0 {
+                        placed.push(Placed { id: l.id, layer, source: rect([sx, sy, sw, sh]), dest: rect([dx, dy, dw, dh]), turns: p.turns, mirror: (p.flip_h, p.flip_v), blend: l.source.blended() });
+                    }
+                }
             }
-            // No screen: the webcam on black, or black.
-            None if cam.is_some() => {
-                draw_cam(Some(full));
-                Ok(())
+        }
+        if on_canvas {
+            let result = self.convert_on_canvas(slot, &placed).context("couldn't convert a screen frame");
+            unsafe { self.gpu.context.Flush() };
+            return result;
+        }
+        // The bottom one writes all of the frame (black around it), each
+        // one over it only its own place.
+        let result = if placed.is_empty() {
+            self.base.clear(&self.video, slot, full)
+        } else {
+            let mut result = Ok(());
+            for (i, p) in placed.iter().enumerate() {
+                let target = if i == 0 { full } else { p.dest };
+                match p.layer.draw(&self.video, slot, p.source, p.dest, target, p.turns, p.mirror) {
+                    Err(e) if i == 0 => {
+                        result = Err(e);
+                        break;
+                    }
+                    Err(e) => eprintln!("couldn't draw a layer: {e}"),
+                    Ok(()) => {}
+                }
             }
-            None => self.base.clear(&self.video, slot, full),
+            result
         }
         .context("couldn't convert a screen frame");
         unsafe { self.gpu.context.Flush() };
         result
+    }
+
+    /// The layers drawn into the canvas, bottom first, on black (see
+    /// [`Canvas`]), and that into target `slot`.
+    fn convert_on_canvas(&self, slot: usize, placed: &[Placed]) -> Result<()> {
+        let mut canvas = self.canvas.borrow_mut();
+        if canvas.is_none() {
+            let picture = Latest::new(&self.gpu, self.width, self.height)?;
+            *canvas = Some(Canvas {
+                target: super::quad::target_view(&self.gpu, &picture.texture)?,
+                quad: super::quad::Quad::new(&self.gpu)?,
+                out: Layer::new(&self.gpu, &self.video, &picture, &self.targets, self.yuv, self.width, self.height, self.fps)?,
+                picture,
+                layers: Vec::new(),
+                views: Vec::new(),
+            });
+        }
+        let Some(c) = canvas.as_mut() else { bail!("no canvas") };
+        let size = (self.width, self.height);
+        // What's gone (or another picture now) is let go of.
+        c.layers.retain(|(id, l)| placed.iter().any(|p| p.id == *id && !p.blend && Arc::ptr_eq(&p.layer.source, &l.source)));
+        c.views.retain(|(id, l, _)| placed.iter().any(|p| p.id == *id && p.blend && Arc::ptr_eq(&p.layer.source, l)));
+        unsafe { self.gpu.context.ClearRenderTargetView(&c.target, &[0.0, 0.0, 0.0, 1.0]) };
+        for p in placed {
+            let source = &p.layer.source;
+            if p.blend {
+                if !c.views.iter().any(|(id, ..)| *id == p.id) {
+                    c.views.push((p.id, source.clone(), super::quad::shader_view(&self.gpu, &source.texture)?));
+                }
+                let Some((.., view)) = c.views.iter().find(|(id, ..)| *id == p.id) else { continue };
+                let (tw, th) = (source.width as f32, source.height as f32);
+                let mut uv = [p.source.left as f32 / tw, p.source.top as f32 / th, p.source.right as f32 / tw, p.source.bottom as f32 / th];
+                // Mirrored as it shows, after it's turned: a quarter turn
+                // puts its picture's up and down across.
+                let (across, down) = if p.turns % 2 == 1 { (p.mirror.1, p.mirror.0) } else { p.mirror };
+                if across {
+                    uv.swap(0, 2);
+                }
+                if down {
+                    uv.swap(1, 3);
+                }
+                let dest = [p.dest.left as f32, p.dest.top as f32, p.dest.right as f32, p.dest.bottom as f32];
+                c.quad.draw(&self.gpu, &c.target, size, view, &super::quad::Placement { dest, uv, clip: p.dest, turns: u32::from(p.turns % 4) }, false);
+            } else {
+                if !c.layers.iter().any(|(id, _)| *id == p.id) {
+                    c.layers.push((p.id, Layer::new(&self.gpu, &self.video, source, std::slice::from_ref(&c.picture.texture), false, self.width, self.height, self.fps)?));
+                }
+                let Some((_, layer)) = c.layers.iter().find(|(id, _)| *id == p.id) else { continue };
+                if let Err(e) = layer.draw(&self.video, 0, p.source, p.dest, p.dest, p.turns, p.mirror) {
+                    eprintln!("couldn't draw a layer: {e}");
+                }
+            }
+        }
+        let full = RECT { left: 0, top: 0, right: self.width as i32, bottom: self.height as i32 };
+        c.out.draw(&self.video, slot, full, full, full, 0, (false, false))?;
+        Ok(())
     }
 }
 
@@ -1098,7 +1454,7 @@ impl Previewer {
     pub(crate) fn new(
         gpu: &Gpu,
         latest: &Arc<Latest>,
-        overlay: Option<(&Arc<Latest>, crate::webcam::SharedPlacement)>,
+        feeds: Option<Arc<super::layers::Feeds>>,
         recorded_width: u32,
         recorded_height: u32,
         fps: u32,
@@ -1114,7 +1470,7 @@ impl Previewer {
             let staging = (0..Self::SLOTS)
                 .map(|_| gpu.texture(width, height, format, 0, D3D11_USAGE_STAGING, D3D11_CPU_ACCESS_READ.0 as u32))
                 .collect::<Result<Vec<_>>>()?;
-            let converter = Converter::new(gpu, latest, overlay.clone(), std::slice::from_ref(&target), false, width, height, fps, screen.clone())?;
+            let converter = Converter::new(gpu, latest, feeds.clone(), std::slice::from_ref(&target), false, width, height, fps, screen.clone())?;
             Ok((target, staging, converter))
         };
         let (rgba, (target, staging, converter)) = match make(DXGI_FORMAT_R8G8B8A8_UNORM) {
@@ -1225,9 +1581,11 @@ impl Drop for Previewer {
 }
 
 /// The preview's size for a recording of `width`×`height`: the same, at most
-/// [`PREVIEW_MAX_WIDTH`] wide. The Sources page shows it under 900 points
-/// wide; at a 1440p recording's size every frame was 15 MB to read back from
-/// the graphics card, copy and upload, 60 times a second.
+/// [`PREVIEW_MAX_WIDTH`] wide. It's full size up to 1440p: the Sources page
+/// shows it big, and things are lined up on it to the pixel (shrunk to
+/// 1280, a 1080p picture was drawn soft, its pixels guessed back). A 4K
+/// one is halved: every frame is read back from the graphics card, copied
+/// and uploaded, 60 times a second.
 fn preview_size(width: u32, height: u32) -> (u32, u32) {
     if width <= PREVIEW_MAX_WIDTH {
         return (width, height);
@@ -1235,7 +1593,7 @@ fn preview_size(width: u32, height: u32) -> (u32, u32) {
     (PREVIEW_MAX_WIDTH, ((height as u64 * PREVIEW_MAX_WIDTH as u64 / width as u64) as u32 / 2 * 2).max(2))
 }
 
-const PREVIEW_MAX_WIDTH: u32 = 1280;
+const PREVIEW_MAX_WIDTH: u32 = 2560;
 
 #[cfg(test)]
 mod priority_tests {
