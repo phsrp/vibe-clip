@@ -11,7 +11,6 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod app_icons;
-mod browser;
 mod archive;
 mod autostart;
 mod away;
@@ -47,8 +46,6 @@ mod linux_desktop;
 mod meter;
 mod moments;
 mod nav;
-mod overlays;
-mod overlay_ui;
 mod picture;
 mod placement_ui;
 mod player;
@@ -713,8 +710,6 @@ struct App {
     /// A demo being recorded (`VIBECLIP_DEMO_SCRIPT`), see `demo.rs`.
     demo: Option<demo::Demo>,
     pub(crate) presence: discord::Presence,
-    /// Overlays' pictures (Vibe Clip), and the capture's list of them.
-    pub(crate) overlays: overlays::Overlays,
     /// Saves a clip as Save clip is pressed, frames or not.
     quick_save: service::QuickSave,
     /// The game being clipped, for Discord: its app's id, the game, and when
@@ -927,7 +922,6 @@ impl App {
             updater,
             demo: demo::Demo::from_env(&ctx),
             presence: discord::Presence::new(),
-            overlays: Default::default(),
             clipped_game: None,
             games,
             sessions: Default::default(),
@@ -1733,7 +1727,6 @@ impl App {
         self.ensure_video_preview();
         self.sync_capture_video();
         self.sync_capture_sources();
-        self.overlays.sync(&mut self.settings.overlays, ctx);
         self.sync_capture_settings();
         self.sync_capture_blend();
         self.watch_stream();

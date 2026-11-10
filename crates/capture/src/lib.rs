@@ -32,7 +32,6 @@ mod mp4mux;
 pub mod output;
 pub mod preview;
 pub mod webcam;
-pub mod overlay;
 pub mod sources;
 mod shutter;
 pub mod export;

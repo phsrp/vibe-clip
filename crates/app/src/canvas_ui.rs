@@ -57,8 +57,6 @@ const MIN_SIZE: f32 = 0.05;
 pub(crate) enum Layer {
     Screen,
     Webcam,
-    /// An overlay (Vibe Clip), by its key.
-    Overlay(u32),
 }
 
 /// A drag on the preview.
@@ -68,8 +66,6 @@ enum Drag {
     Webcam(Handle, Pos2, Placement),
     /// The screen: moved, resized, or (Alt) cropped.
     Screen(ScreenHold),
-    /// An overlay (Vibe Clip): its key, what's held, where, and its box then.
-    Overlay(u32, Handle, Pos2, Rect),
     /// A source filling the video, held in its middle: it has nowhere to move.
     Stuck(Layer),
 }
@@ -346,18 +342,6 @@ pub(crate) fn screen_drag(start: Rect, handle: Handle, dx: f32, dy: f32, snap: b
     webcam_ui::resize_within(start, handle.sides(), vec2(dx, dy), !stretch, bounds, vec2(MIN_SIZE, MIN_SIZE))
 }
 
-/// An overlay's box after dragging `handle` by `(dx, dy)` (fractions of the
-/// video) from `start`: moved as the screen is (snapping, unless `snap` is
-/// off), or resized from the opposite corner or side, keeping its shape
-/// unless it's to `stretch`, as small as a hundredth of the video.
-pub(crate) fn overlay_drag(start: Rect, handle: Handle, dx: f32, dy: f32, snap: bool, stretch: bool, lines: &Lines) -> Rect {
-    if handle == Handle::Move {
-        return screen_drag(start, handle, dx, dy, snap, stretch, lines);
-    }
-    let bounds = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)).union(start);
-    webcam_ui::resize_within(start, handle.sides(), vec2(dx, dy), !stretch, bounds, vec2(0.01, 0.01))
-}
-
 /// The screen's box and crop after cropping it by dragging `handle` by
 /// `(dx, dy)` (fractions of the video), from its box `start` showing `part`
 /// of a `dw`×`dh` display (in its pixels): the picture keeps its scale and
@@ -542,19 +526,15 @@ impl App {
     pub(crate) fn layer_order(&self) -> Vec<Layer> {
         let webcam = self.settings.webcam.is_some().then_some(Layer::Webcam);
         let order = if self.settings.screen.in_front { [Some(Layer::Screen), webcam] } else { [webcam, Some(Layer::Screen)] };
-        // Overlays (Vibe Clip) in front of both, the last one first.
-        self.settings.overlays.iter().rev().map(|o| Layer::Overlay(o.key)).chain(order.into_iter().flatten()).collect()
+        order.into_iter().flatten().collect()
     }
 
-    /// The sources in this order, front first. Overlays stay in front of the
-    /// screen and the webcam: only their order among themselves changes.
+    /// The sources in this order, front first.
     pub(crate) fn set_layer_order(&mut self, order: &[Layer]) {
         let at = |l: Layer| order.iter().position(|o| *o == l);
         if let (Some(screen), Some(webcam)) = (at(Layer::Screen), at(Layer::Webcam)) {
             self.settings.screen.in_front = screen < webcam;
         }
-        let place = |o: &crate::settings::OverlayCfg| std::cmp::Reverse(at(Layer::Overlay(o.key)).unwrap_or(usize::MAX));
-        self.settings.overlays.sort_by_key(place);
     }
 
     /// The sources in the video, front first, and where each is (fractions
@@ -563,8 +543,7 @@ impl App {
         let screen = self.settings.screen.enabled.then(|| (Layer::Screen, self.screen_rect(frame_aspect)));
         let webcam = self.webcam_placement().filter(|_| self.settings.webcam.as_ref().is_some_and(|w| w.enabled)).map(|p| (Layer::Webcam, Rect::from_min_size(Pos2::new(p.x, p.y), vec2(p.w, p.h))));
         let order = if self.settings.screen.in_front { [screen, webcam] } else { [webcam, screen] };
-        let overlays = self.settings.overlays.iter().rev().filter(|o| o.visible).filter_map(|o| o.rect.map(|[x, y, w, h]| (Layer::Overlay(o.key), Rect::from_min_size(Pos2::new(x, y), vec2(w, h)))));
-        overlays.chain(order.into_iter().flatten()).collect()
+        order.into_iter().flatten().collect()
     }
 
     /// The sources on the preview (`frame_rect`, whose `response` takes the
@@ -593,7 +572,6 @@ impl App {
                 let drag = match layer {
                     Layer::Webcam => Drag::Webcam(handle, from, self.webcam_placement().unwrap_or_else(Placement::hidden)),
                     Layer::Screen => self.take_screen(handle, from, aspect),
-                    Layer::Overlay(key) => Drag::Overlay(key, handle, from, self.overlay_rect(key).unwrap_or(Rect::NOTHING)),
                 };
                 // Something that moves can be put back (one held that can't, can't).
                 if !matches!(drag, Drag::Stuck(_)) {
@@ -631,20 +609,11 @@ impl App {
                             guides = snapped(r, &lines);
                         }
                     }
-                    Drag::Overlay(key, handle, from, start) => {
-                        let (dx, dy) = d(from);
-                        let lines = lines_of(&layers, Layer::Overlay(key));
-                        let r = overlay_drag(start, handle, dx, dy, snap, modifiers.shift, &lines);
-                        self.set_overlay_rect(key, r);
-                        if handle == Handle::Move && snap {
-                            guides = snapped(r, &lines);
-                        }
-                    }
                     Drag::Stuck(_) => {}
                 }
                 ui.ctx().set_cursor_icon(match drag {
-                    Drag::Webcam(Handle::Move, ..) | Drag::Screen(ScreenHold { handle: Handle::Move, .. }) | Drag::Overlay(_, Handle::Move, ..) => CursorIcon::Grabbing,
-                    Drag::Webcam(h, ..) | Drag::Screen(ScreenHold { handle: h, .. }) | Drag::Overlay(_, h, ..) => h.cursor(),
+                    Drag::Webcam(Handle::Move, ..) | Drag::Screen(ScreenHold { handle: Handle::Move, .. }) => CursorIcon::Grabbing,
+                    Drag::Webcam(h, ..) | Drag::Screen(ScreenHold { handle: h, .. }) => h.cursor(),
                     Drag::Stuck(_) => CursorIcon::NotAllowed,
                 });
             }
@@ -678,7 +647,6 @@ impl App {
         let held = self.canvas.drag.map(|d| match d {
             Drag::Webcam(h, ..) => (Layer::Webcam, Some(h)),
             Drag::Screen(h) => (Layer::Screen, Some(h.handle)),
-            Drag::Overlay(key, h, ..) => (Layer::Overlay(key), Some(h)),
             Drag::Stuck(l) => (l, None),
         });
         let over = pointer.and_then(|p| hit(&layers, &shown, p));
@@ -779,10 +747,7 @@ impl App {
         let moves = !stuck(rect);
         let hint = match (self.canvas.drag, active) {
             (Some(Drag::Stuck(_)), _) => "It fills the video: drag a corner to make it smaller".to_owned(),
-            (Some(Drag::Webcam(Handle::Move, ..) | Drag::Screen(ScreenHold { handle: Handle::Move, .. }) | Drag::Overlay(_, Handle::Move, ..)), _) => format!("{ctrl}: place freely"),
-            (Some(Drag::Overlay(..)), _) if modifiers.shift => "Stretching · let go of Shift to keep its shape".to_owned(),
-            (Some(Drag::Overlay(..)), _) => "Shift: stretch".to_owned(),
-            (None, Layer::Overlay(_)) => "Drag to move · a corner to resize · right-click for more".to_owned(),
+            (Some(Drag::Webcam(Handle::Move, ..) | Drag::Screen(ScreenHold { handle: Handle::Move, .. })), _) => format!("{ctrl}: place freely"),
             (Some(Drag::Webcam(..) | Drag::Screen(..)), _) if cropping && modifiers.shift => "Cropping, keeping the shape".to_owned(),
             (Some(Drag::Webcam(..) | Drag::Screen(..)), _) if cropping => "Cropping · Shift keeps the shape".to_owned(),
             (Some(Drag::Webcam(..)), _) if modifiers.shift => format!("Stretching · {alt}: crop"),
@@ -898,10 +863,6 @@ impl App {
     /// mirroring and flipping it, which is in front, and taking the webcam
     /// out.
     pub(crate) fn layer_menu(&mut self, ui: &mut egui::Ui, layer: Layer, aspect: f32) {
-        if let Layer::Overlay(key) = layer {
-            self.overlay_menu(ui, key, aspect);
-            return;
-        }
         let screen = layer == Layer::Screen;
         if Item::new("Edit placement…").icon(icon::SLIDERS_HORIZONTAL).tip("Its position, size, turn and flip as numbers, on its card").show(ui).clicked() {
             self.open_placement(layer);
@@ -927,7 +888,6 @@ impl App {
             Layer::Screen if self.video_shaped() => ("Back in the middle of the video, its size kept", "Back to the size the video gives it, where it is"),
             Layer::Screen => ("Back in the middle of the video, its size kept", "As big as the video again, where it is"),
             Layer::Webcam => ("Back to the bottom-right corner, its size kept", "A quarter of the video wide again, where it is"),
-            Layer::Overlay(_) => ("", ""),
         };
         if Item::new("Reset position").icon(icon::ARROWS_OUT_CARDINAL).enabled(position).tip(place_tip).show(ui).clicked() {
             if screen { self.screen_reset_position(aspect) } else { self.webcam_reset_position(aspect) }
@@ -958,7 +918,6 @@ impl App {
         let (mirrored, upside_down) = match layer {
             Layer::Screen => (self.settings.screen.flip_h, self.settings.screen.flip_v),
             Layer::Webcam => self.webcam_placement().map_or((false, false), |p| (p.flip_h, p.flip_v)),
-            Layer::Overlay(_) => (false, false),
         };
         if Item::new("Mirror").icon(icon::FLIP_HORIZONTAL).check(mirrored).tip("Flip left to right").show(ui).clicked() {
             self.flip_layer(layer, true, aspect);
@@ -999,8 +958,6 @@ impl App {
                     w.placement = PlacementCfg::laid_out(webcam_ui::contain(p.turn(by, aspect)), aspect);
                 }
             }
-            // Overlays don't turn.
-            Layer::Overlay(_) => {}
         }
     }
 
@@ -1019,8 +976,6 @@ impl App {
                     w.placement = PlacementCfg::laid_out(p, aspect);
                 }
             }
-            // Overlays don't flip.
-            Layer::Overlay(_) => {}
         }
     }
 }
