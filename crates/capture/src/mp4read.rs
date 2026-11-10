@@ -43,6 +43,12 @@ pub struct Index {
     /// The colour matrix the file states (ISO 23091-2 numbers: 1 BT.709,
     /// 5/6 BT.601), if it does: in its `colr` box, else in its SPS.
     pub matrix: Option<u16>,
+    /// The time (in `timescale`) of the sample shown at the clip's start, as
+    /// the track's edit list says, when it has one (Vibe Clip). Medal trims a
+    /// clip by such an edit, the video starting 0.2 s into its samples and
+    /// each sound track at its own place; players and ffmpeg (the app's
+    /// sound) start there, so the picture must too, or it lags the sound.
+    pub start: Option<i64>,
 }
 
 impl Index {
@@ -51,21 +57,65 @@ impl Index {
         let mut f = File::open(path)?;
         let len = f.metadata()?.len();
         let moov = find_top(&mut f, len, b"moov")?.context("no moov box (a fragmented or unfinished file?)")?;
+        let movie_ts = child(&moov, b"mvhd").and_then(timescale_of);
         for trak in children(&moov, b"trak") {
             let Some(mdia) = child(trak, b"mdia") else { continue };
             let Some(hdlr) = child(mdia, b"hdlr") else { continue };
             if hdlr.get(8..12) != Some(b"vide") {
                 continue;
             }
-            return parse_video(mdia);
+            let mut index = parse_video(mdia)?;
+            index.start = movie_ts.and_then(|m| edit_start(trak, m, index.timescale));
+            return Ok(index);
         }
         bail!("no video track")
+    }
+
+    /// Where the video track's edit list starts showing it, in seconds of
+    /// its samples' times (see [`Index::start`]), for any codec: what Media
+    /// Foundation, which plays the clips this index can't (HEVC), leaves out.
+    pub fn video_start(path: &Path) -> Option<f64> {
+        let mut f = File::open(path).ok()?;
+        let len = f.metadata().ok()?.len();
+        let moov = find_top(&mut f, len, b"moov").ok()??;
+        let movie_ts = child(&moov, b"mvhd").and_then(timescale_of)?;
+        let trak = children(&moov, b"trak").find(|t| child(t, b"mdia").and_then(|m| child(m, b"hdlr")).and_then(|h| h.get(8..12)) == Some(b"vide"))?;
+        let ts = child(trak, b"mdia").and_then(|m| child(m, b"mdhd")).and_then(timescale_of)?;
+        edit_start(trak, movie_ts, ts).map(|s| s as f64 / ts.max(1) as f64)
     }
 
     /// Indices (into `samples`) of the keyframes, in decode order.
     pub fn keyframes(&self) -> Vec<usize> {
         self.samples.iter().enumerate().filter(|(_, s)| s.key).map(|(i, _)| i).collect()
     }
+}
+
+/// An `mvhd` or `mdhd` body's timescale.
+fn timescale_of(b: &[u8]) -> Option<u32> {
+    let at = if *b.first()? == 1 { 20 } else { 12 };
+    b.get(at..at + 4).map(be32)
+}
+
+/// Where the track's edit list starts showing it: the media time (in the
+/// track's `timescale`) shown at the movie's start. An empty edit first (the
+/// track starts late) puts that earlier, by its length. None without an edit
+/// list, or with one that shows nothing.
+fn edit_start(trak: &[u8], movie_ts: u32, timescale: u32) -> Option<i64> {
+    let elst = child(child(trak, b"edts")?, b"elst")?;
+    let v1 = *elst.first()? == 1;
+    let n = be32(elst.get(4..8)?) as usize;
+    let size = if v1 { 20 } else { 12 };
+    let mut empty = 0i64;
+    for i in 0..n {
+        let e = elst.get(8 + i * size..8 + (i + 1) * size)?;
+        let (duration, media) = if v1 { (be64(e) as i64, be64(&e[8..]) as i64) } else { (be32(e) as i64, be32(&e[4..]) as i32 as i64) };
+        if media == -1 {
+            empty += duration;
+            continue;
+        }
+        return Some(media - empty * timescale as i64 / movie_ts.max(1) as i64);
+    }
+    None
 }
 
 fn parse_video(mdia: &[u8]) -> Result<Index> {
@@ -166,7 +216,7 @@ fn parse_video(mdia: &[u8]) -> Result<Index> {
             key: keys.as_ref().is_none_or(|k| k.binary_search(&(i as u32 + 1)).is_ok()),
         })
         .collect();
-    Ok(Index { width, height, timescale, samples, nal_length, sps, pps, avcc: avcc.to_vec(), matrix })
+    Ok(Index { width, height, timescale, samples, nal_length, sps, pps, avcc: avcc.to_vec(), matrix, start: None })
 }
 
 /// A top-level box's body, read into memory.

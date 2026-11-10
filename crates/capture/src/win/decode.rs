@@ -419,6 +419,20 @@ impl Decoder {
             // The first frame's time is frame 0's; keep the frame for the first read.
             let (time, sample) = d.read_sample()?.context("the video has no frames")?;
             d.offset = time;
+            // Unless the file's edit list starts it later (Vibe Clip: Medal
+            // trims its clips so, 0.2 s into their samples), as players and
+            // the app's sound (ffmpeg) do: frames before then are all frame
+            // 0. Media Foundation's reader leaves edit lists out too.
+            let start = match &d.src {
+                Source::Direct(s) => s.index.start.map(|st| st * UNITS as i64 / s.index.timescale.max(1) as i64), // as `direct` times its samples
+                Source::Reader(_) => {
+                    let mp4 = path.extension().and_then(|e| e.to_str()).is_some_and(|e| ["mp4", "m4v", "mov"].contains(&e.to_ascii_lowercase().as_str()));
+                    mp4.then(|| crate::mp4read::Index::video_start(path)).flatten().map(|s| (s * UNITS).round() as i64)
+                }
+            };
+            if let Some(start) = start {
+                d.offset = start;
+            }
             d.peeked = Some((0, sample));
             d.next_index = Some(0);
             Ok(d)
@@ -1044,5 +1058,87 @@ impl Convert {
             bail!("empty frame");
         }
         Ok(rgba)
+    }
+}
+
+#[cfg(test)]
+mod edit_list_tests {
+    use super::*;
+
+    fn ffmpeg_frame(clip: &Path, t: f64, w: u32, h: u32) -> Vec<u8> {
+        let out = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-i"])
+            .arg(clip)
+            .args(["-ss", &format!("{t:.4}"), "-frames:v", "1", "-vf", &format!("scale={w}:{h}:flags=area"), "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+            .output()
+            .unwrap();
+        out.stdout
+    }
+
+    fn diff(a: &[u8], b: &[u8]) -> f64 {
+        a.iter().zip(b).map(|(x, y)| x.abs_diff(*y) as u64).sum::<u64>() as f64 / a.len().max(1) as f64
+    }
+
+    /// A clip trimmed by an edit list (as Medal trims its clips: the video
+    /// shown from 0.3 s into its samples) plays from where the edit says, as
+    /// players and ffmpeg do (Vibe Clip: Medal clips' picture lagged their
+    /// sound by a quarter second). Needs ffmpeg on PATH.
+    #[test]
+    fn a_clip_starts_where_its_edit_list_says() {
+        let dir = std::env::temp_dir().join(format!("vc-elst-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (whole, trimmed) = (dir.join("whole.mp4"), dir.join("trimmed.mp4"));
+        let made = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=60:duration=4", "-c:v", "libx264", "-g", "120", "-bf", "0", "-pix_fmt", "yuv420p"])
+            .arg(&whole)
+            .status();
+        if !made.is_ok_and(|s| s.success()) {
+            eprintln!("no ffmpeg: skipped");
+            return;
+        }
+        // Copied from 0.3 s: it starts at the keyframe before, and an edit
+        // list hides the 0.3 s up to the cut.
+        let cut = std::process::Command::new("ffmpeg").args(["-v", "error", "-y", "-ss", "0.3", "-i"]).arg(&whole).args(["-c", "copy"]).arg(&trimmed).status().unwrap();
+        assert!(cut.success());
+        let index = crate::mp4read::Index::read(&trimmed).unwrap();
+        assert!(index.start.is_some_and(|s| s > 0), "the edit list starts it later: {:?}", index.start);
+
+        let mut d = Decoder::open_direct(&trimmed, 160, None).unwrap();
+        for k in [0u64, 30, 90] {
+            let ours = d.frame(k).unwrap().expect("a frame");
+            // ffmpeg's frames around its time: ours is the one at its time
+            // (scaling and colour conversion differ a little, so the closest).
+            let near: Vec<(i64, f64)> = (-20i64..=20)
+                .filter(|o| k as i64 + o >= 0)
+                .map(|o| (o, diff(&ours.rgba, &ffmpeg_frame(&trimmed, (k as i64 + o) as f64 / 60.0, ours.width, ours.height))))
+                .collect();
+            let best = near.iter().min_by(|a, b| a.1.total_cmp(&b.1)).unwrap();
+            eprintln!("frame {k}: closest to ffmpeg's frame {:+} from its time (off by {:.2})", best.0, best.1);
+            assert_eq!(best.0, 0, "frame {k} is ffmpeg's {:+} frames off", best.0);
+        }
+        drop(d);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The same on a real clip: `VIBECLIP_CLIP=<mp4> cargo test --release -p
+    /// capture a_real_clip -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs a clip in VIBECLIP_CLIP"]
+    fn a_real_clip_starts_where_its_edit_list_says() {
+        let clip = std::path::PathBuf::from(std::env::var("VIBECLIP_CLIP").unwrap());
+        eprintln!("edit list start: {:?} s", crate::mp4read::Index::video_start(&clip));
+        let mut d = Decoder::open_file_reader(&clip, 160, None).unwrap();
+        eprintln!("frame 0 at {:.4} s on the decoder's clock", d.offset as f64 / UNITS);
+        let fps = d.fps;
+        for k in [0u64, 300, 1200, 2400] {
+            let Some(ours) = d.frame(k).unwrap() else { continue };
+            let near: Vec<(i64, f64)> = (-20i64..=20)
+                .filter(|o| k as i64 + o >= 0)
+                .map(|o| (o, diff(&ours.rgba, &ffmpeg_frame(&clip, (k as i64 + o) as f64 / fps, ours.width, ours.height))))
+                .collect();
+            let best = near.iter().min_by(|a, b| a.1.total_cmp(&b.1)).unwrap();
+            eprintln!("frame {k}: closest to ffmpeg's frame {:+} from its time (off by {:.2})", best.0, best.1);
+            assert!(best.0.abs() <= 1, "frame {k} is ffmpeg's {:+} frames off", best.0);
+        }
     }
 }
