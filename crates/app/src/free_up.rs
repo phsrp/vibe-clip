@@ -385,6 +385,43 @@ impl App {
         }
     }
 
+    /// Delete original… from a clip's menu: asked first, as the editor's
+    /// Save ▾ asks, then done in the background.
+    pub(crate) fn delete_original_dialog(&mut self, ctx: &egui::Context) {
+        let Some(path) = self.confirm_delete_original.clone() else { return };
+        let Some(clip) = self.clips.iter().find(|c| c.path == path && c.kept_bytes > 0).cloned() else {
+            // Gone, or its original already is.
+            self.confirm_delete_original = None;
+            return;
+        };
+        let permanently = self.settings.delete_permanently;
+        let (mut yes, mut no) = (false, false);
+        let modal = ui_kit::dialog(ctx, "delete_original_menu", 400.0, |ui| {
+            ui_kit::dialog_title(ui, "Delete the original?");
+            ui_kit::dialog_text(
+                ui,
+                &format!("The clip stays as it is, but the original recording it was cut from ({}) is deleted. Its edit can't be changed or reverted afterwards.", export_ui::human_bytes(clip.kept_bytes)),
+            );
+            if !permanently {
+                ui_kit::hint(ui, &format!("It goes to the {}: empty it to get the space back.", store::bin_name()));
+            }
+            ui_kit::dialog_buttons(ui, |ui| {
+                yes = ui.add(ui_kit::danger_button("Delete original")).clicked();
+                no = ui.add(ui_kit::button("Cancel", false).ghost()).clicked();
+            });
+        });
+        if yes {
+            self.confirm_delete_original = None;
+            if self.renders.iter().any(|j| j.source == path) {
+                self.toast("This clip is still saving");
+            } else {
+                self.free_up_original(store::EditTarget::of(&path), FreeUp::Delete);
+            }
+        } else if no || ui_kit::Dismissed::dismissed(&modal) {
+            self.confirm_delete_original = None;
+        }
+    }
+
     /// Trim or delete an edited clip's original, in the background, as
     /// the editor's Save ▾ does when the edit's already saved.
     pub(crate) fn free_up_original(&mut self, target: store::EditTarget, how: FreeUp) {

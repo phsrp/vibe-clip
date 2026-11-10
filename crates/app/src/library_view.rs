@@ -1105,7 +1105,7 @@ impl App {
         let when = clip.captured_at().format("Saved %-d %B at %H:%M").to_string();
         let size_tip = if clip.kept_bytes > 0 {
             format!(
-                "{when}\n{} in all: {} for the clip, and {} for its original recording, kept so the edit can be changed or undone. Right-click → Free up space to trim or delete it.",
+                "{when}\n{} in all: {} for the clip, and {} for its original recording, kept so the edit can be changed or undone. Right-click → Delete original to get the space back.",
                 clips::human_bytes(clip.size_bytes + clip.kept_bytes),
                 clip.human_size(),
                 clips::human_bytes(clip.kept_bytes),
@@ -1226,6 +1226,19 @@ impl App {
         let selected = self.selection.paths.contains(&clip.path);
         if Item::new(if selected { "Deselect" } else { "Select" }).icon(icon::CHECK_CIRCLE).show(ui).clicked() {
             action = Some(Action::Select { path: clip.path.clone(), range: false });
+        }
+        // An edited clip's original, deleted straight from here (without
+        // opening the editor or Free up space).
+        if !image
+            && clip.kept_bytes > 0
+            && Item::new("Delete original…")
+                .icon(icon::FILM_SLATE)
+                .value(clips::human_bytes(clip.kept_bytes))
+                .tip("Delete the recording this clip was cut from. The clip stays as it is, but its edit can't be changed afterwards")
+                .show(ui)
+                .clicked()
+        {
+            action = Some(Action::DeleteOriginal(clip.path.clone()));
         }
         if !image && Item::new("Free up space…").icon(icon::HARD_DRIVE).tip(FREE_UP_TIP).show(ui).clicked() {
             action = Some(Action::FreeUp(vec![clip.path.clone()]));
@@ -1439,6 +1452,7 @@ impl App {
             Action::Export(paths) => self.export_clips(&paths),
             Action::Import => self.import_clips_dialog(),
             Action::FreeUp(paths) => self.ask_free_up(&paths),
+            Action::DeleteOriginal(path) => self.confirm_delete_original = Some(path),
         }
     }
 }

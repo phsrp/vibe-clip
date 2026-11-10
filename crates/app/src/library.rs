@@ -274,6 +274,8 @@ pub(crate) enum Action {
     TrashSelected,
     /// Ask how to free up the space these edited clips' originals take.
     FreeUp(Vec<PathBuf>),
+    /// Delete an edited clip's original recording (asked first).
+    DeleteOriginal(PathBuf),
 }
 
 impl App {

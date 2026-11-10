@@ -708,6 +708,8 @@ struct App {
     /// The library's Free up space dialog, and originals being freed (see
     /// `free_up.rs`).
     pub(crate) free_up: Option<free_up::Ask>,
+    /// Delete original… from a clip's menu: the clip, while it's asked.
+    pub(crate) confirm_delete_original: Option<PathBuf>,
     pub(crate) free_up_batches: Vec<free_up::Batch>,
     /// The editor was opened from the player on this clip: closing it goes
     /// back there, not to the library (so cleaning up clips flows on).
@@ -966,6 +968,7 @@ impl App {
             card_drag: None,
             confirm_delete: None,
             free_up: None,
+            confirm_delete_original: None,
             free_up_batches: Vec::new(),
             last_view: None,
             tray,
@@ -1563,6 +1566,7 @@ impl eframe::App for App {
             || self.collection_dialog.is_some()
             || self.confirm_delete.is_some()
             || self.free_up.is_some()
+            || self.confirm_delete_original.is_some()
             || self.link_dialog.is_some()
             || self.confirm_reset
             || self.close_dialog
@@ -1616,6 +1620,7 @@ impl eframe::App for App {
         self.collection_dialog(&ctx);
         self.delete_dialog(&ctx);
         self.free_up_dialog(&ctx);
+        self.delete_original_dialog(&ctx);
         self.link_dialog(&ctx);
         self.close_dialog(&ctx);
         self.fork_notice(&ctx);
