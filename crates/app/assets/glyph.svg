@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!-- Vibe Clip's glyph: a V (for Vibe) with a record dot in it, in one
        colour on transparent. scripts/icons.py renders every icon from this
-       and icon-tile.svg / icon-mac.svg. -->
-  <g fill="#fff" stroke="#fff"><path d="M 72 104 L 256 462 L 440 104" fill="none" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="118" r="48" stroke="none"/></g>
+       and the icon-tile*.svg / icon-mac.svg tiles. -->
+  <path d="M 104 128 L 256 424 L 408 128" fill="none" stroke="#fff" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="150" r="40" fill="#fff"/>
 </svg>

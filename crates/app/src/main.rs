@@ -408,7 +408,7 @@ pub(crate) fn app_icon() -> egui::IconData {
     // Linux: the icon the desktop has for the app (scripts/icons.py).
     #[cfg(not(any(windows, target_os = "macos")))]
     let png = include_bytes!("../assets/glyph-icon/256.png");
-    // Windows: the .exe's icon, the glyph on its violet-to-pink tile.
+    // Windows: the .exe's icon, the glyph on its near-black tile.
     #[cfg(windows)]
     let png = include_bytes!("../assets/icon-tile-256.png");
     #[cfg(target_os = "macos")]

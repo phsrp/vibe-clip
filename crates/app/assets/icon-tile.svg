@@ -1,8 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- Vibe Clip's app icon on Windows (the .exe and the taskbar): the glyph in
-       white on a rounded violet-to-pink tile that fills the icon. -->
-  <defs><linearGradient id="plate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="0.55" stop-color="#a855f7"/><stop offset="1" stop-color="#ec4899"/></linearGradient><linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.22"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/></linearGradient><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#2e1065" flood-opacity="0.45"/></filter><filter id="tile" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.28"/></filter></defs>
-  <rect x="24" y="24" width="976" height="976" rx="224" fill="url(#plate)"/>
-  <rect x="24" y="24" width="976" height="976" rx="224" fill="url(#sheen)"/>
-  <g transform="translate(152 158) scale(1.40625)" filter="url(#shadow)" fill="#fff" stroke="#fff"><path d="M 72 104 L 256 462 L 440 104" fill="none" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="118" r="48" stroke="none"/></g>
+  <!-- Vibe Clip's app icon on Windows (the .exe, the taskbar): flat and
+       minimal, a white V with a violet record dot on a near-black tile. -->
+  <rect x="24" y="24" width="976" height="976" rx="224" fill="#15121c"/>
+  <g transform="translate(192 192) scale(1.25)"><path d="M 104 128 L 256 424 L 408 128" fill="none" stroke="#fff" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="150" r="40" fill="#a855f7"/></g>
 </svg>

@@ -12,10 +12,9 @@ use std::path::{Path, PathBuf};
 use crate::portal_shortcuts::APP_ID;
 
 const DESKTOP_FILE: &str = include_str!("../assets/io.github.phsrp.VibeClip.desktop");
-/// The glyph without the macOS plate, as on Windows, at each size of the
-/// icon theme's (made by scripts/icons.py). PNGs, not an SVG: KDE draws an
-/// SVG icon with Qt, which ignores paint-order (the glyph's keyline covered
-/// it), and the bigger sizes' soft shadow is a blur no SVG icon can count on.
+/// The tile, as on Windows, at each size of the icon theme's (made by
+/// scripts/icons.py, with a bolder V at 32 px and under). PNGs, not an SVG,
+/// so the small sizes get their own drawing.
 const ICONS: [(u32, &[u8]); 10] = [
     (16, include_bytes!("../assets/glyph-icon/16.png")),
     (22, include_bytes!("../assets/glyph-icon/22.png")),

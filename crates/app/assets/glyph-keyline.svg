@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- The glyph in white with a dark keyline round it, so it reads on a light
-       taskbar as well as a dark one. Only drawn small (the tray, 16-64 px). -->
-  <g fill="#1b1033" stroke="#1b1033"><path d="M 72 104 L 256 462 L 440 104" fill="none" stroke-width="140" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="118" r="72" stroke="none"/></g>
-  <g fill="#fff" stroke="#fff"><path d="M 72 104 L 256 462 L 440 104" fill="none" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="118" r="48" stroke="none"/></g>
-</svg>

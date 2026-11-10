@@ -11,10 +11,10 @@ const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
 const BACKGROUND: Rgba<u8> = Rgba([0, 0, 0, 255]);
 const LOGO: u32 = 300;
-/// Where the icon's tile sits inside it (icon-mac.svg: 100 to 924 of 1024,
-/// its shadow below), as fractions of the icon's height.
+/// Where the icon's tile sits inside it (icon-mac.svg: 100 to 924 of 1024),
+/// as fractions of the icon's height.
 const ART_TOP: f32 = 100.0 / 1024.0;
-const ART_BOTTOM: f32 = 950.0 / 1024.0;
+const ART_BOTTOM: f32 = 924.0 / 1024.0;
 /// From the bottom of the artwork to the top of the lettering.
 const GAP: f32 = 38.0;
 const TEXT: &str = "Tabbed out";

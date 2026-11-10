@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- icon-tile.svg with a bolder V, for 32 px and under (the tray, small
+       .exe icons) where the thin one would blur away. -->
+  <rect x="24" y="24" width="976" height="976" rx="224" fill="#15121c"/>
+  <g transform="translate(192 192) scale(1.25)"><path d="M 104 128 L 256 424 L 408 128" fill="none" stroke="#fff" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="150" r="44" fill="#a855f7"/></g>
+</svg>
