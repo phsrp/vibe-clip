@@ -323,8 +323,9 @@ pub fn claim() -> Option<Option<std::net::TcpListener>> {
 }
 
 /// Where the first one listens. Fixed, so a later one knows where to knock
-/// (nothing special).
-const PORT: u16 = 52131;
+/// (nothing special). Not HasteClip's 52131: on that, opening HasteClip
+/// while Vibe Clip ran showed Vibe Clip instead, and the other way round.
+const PORT: u16 = 52141;
 
 fn claim_on(port: u16) -> Option<Option<std::net::TcpListener>> {
     use std::io::Write;
