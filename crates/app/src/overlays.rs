@@ -85,19 +85,11 @@ impl Overlays {
         if let Ok(mut shared) = capture::overlay::shared().lock() {
             *shared = list;
         }
-        // Their sound source follows their browser process.
-        capture::sources::set_browser_pid(self.browser_pid().unwrap_or(0));
     }
 
     /// How an overlay's picture is going.
     pub(crate) fn state(&self, key: u32) -> State {
         self.made.get(&key).map(|m| m.state.lock().unwrap().clone()).unwrap_or_default()
-    }
-
-    /// The browser process of the browser overlays (they share one), whose
-    /// sound is theirs, once one is open.
-    pub(crate) fn browser_pid(&self) -> Option<u32> {
-        self.made.values().filter_map(|m| m.browser.as_ref()).find_map(|p| p.sound_pid())
     }
 
     /// The size of an overlay's picture, once it's made.
@@ -136,15 +128,11 @@ fn make(kind: &OverlayKind, visible: bool, made: &mut Made, ctx: &egui::Context)
             capture::overlay::put(&picture, w, h, rgba);
             *state.lock().unwrap() = State::Made(w, h);
         }
-        OverlayKind::Browser { url, width, height, sound } => {
+        OverlayKind::Browser { url, width, height, .. } => {
             *picture.lock().unwrap() = None;
             if visible {
                 match crate::browser::Page::open(&url, width, height, picture.clone(), state.clone(), ctx.clone()) {
-                    Ok(page) => {
-                        // Its sound left out: silent in the browser itself.
-                        page.set_muted(!sound);
-                        made.browser = Some(page);
-                    }
+                    Ok(page) => made.browser = Some(page),
                     Err(e) => *state.lock().unwrap() = State::Failed(e),
                 }
             } else {

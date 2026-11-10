@@ -807,10 +807,6 @@ pub struct DetectedGame {
     pub path: String,
 }
 
-/// The sound source of the browser overlays (Vibe Clip): an app source by
-/// this name, captured from their browser process.
-pub const BROWSER_SOUND: &str = capture::sources::BROWSER_APP;
-
 /// A custom audio track (Vibe Clip): like OBS's, any sources can share one,
 /// and a source can be in several. Their order is the file's.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -367,20 +367,6 @@ fn sync_taps(taps: &mut [Tap], start: fn(Target, Arc<SourceFeed>) -> Result<Stre
 
     for tap in taps.iter_mut() {
         let wanted: Vec<Target> = match &tap.source.kind {
-            // Vibe Clip's browser overlays: their WebView2 browser process
-            // and the ones it started, once it runs.
-            SourceKind::App { bundle_id } if bundle_id == crate::sources::BROWSER_APP => {
-                let pid = crate::sources::browser_pid();
-                if pid == 0 || !tree.iter().any(|p| p.pid == pid) {
-                    for (_, (_, child)) in tap.streams.drain() {
-                        tap.feed.remove_child(&child);
-                    }
-                    tap.channel.set_status(SourceStatus::WaitingForApp);
-                    log_change(tap, "waiting: no browser overlay open".to_owned());
-                    continue;
-                }
-                vec![Target::Include(pid)]
-            }
             SourceKind::App { bundle_id } => {
                 // Never this process (its sound comes from `own_sound`), but
                 // another Vibe Clip running, yes.
