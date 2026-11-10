@@ -16,8 +16,14 @@ Changed by phsrp, starting 9 November 2026 (every change is in this repository's
 - A new icon and save sound.
 - Themes: Default (HasteClip's look), Gruvbox and Rosé Pine, each in dark and light (Settings → App).
 - The editor can change the speed of each part of a clip (right-click a part → Speed), keeping voices' pitch.
-- Custom audio tracks like OBS's (Sources → Tracks): named, in your order, shared by any sources.
-- Overlays like OBS's image, text and browser sources, placed and sized on the preview, with transparency. Browser overlays are drawn by WebView2 (part of Windows), and their sound is a source of its own.
+- Custom audio tracks like OBS's (Sources → Sound → Tracks): named, in your order, shared by any sources.
+- Games that no list knows are found by how they run (full screen and drawing 3D).
+- Clips trimmed by other recorders (Medal's, with an MP4 edit list) play with their sound in sync.
+- The mouse wheel scrolls as many lines a notch as Windows does (egui's own is one).
+- No feedback button (it opened HasteClip's issue tracker).
+- Its own single-instance and control port (52141), so it runs beside HasteClip.
+
+Kept up to date with HasteClip: last merged HasteClip 0.8.0 (scenes, presets, image, text, video and web page sources, going live).
 
 Planned:
 
