@@ -743,6 +743,9 @@ struct App {
     quitting: bool,
     /// The first close: ask whether to keep running in the tray.
     close_dialog: bool,
+    /// The first launch: Vibe Clip is a fork of HasteClip, and where to
+    /// support its developer.
+    fork_notice: bool,
     /// macOS: the permissions screen is up (once, at the first launch).
     setup_open: bool,
     /// What was shown last frame (page, library filter, Settings' pane and
@@ -833,6 +836,9 @@ impl App {
         let setup_open = settings.setup_shown < setup::SETUP_ROUND && !demo::on();
         #[cfg(not(target_os = "macos"))]
         let setup_open = false;
+        // The fork notice, once (not in demo recordings, unless
+        // VIBECLIP_FORK_NOTICE asks for it).
+        let fork_notice = !settings.fork_notice_shown && (!demo::on() || std::env::var_os("VIBECLIP_FORK_NOTICE").is_some());
         let updater = update::Updater::new(ctx.clone(), settings.auto_update);
         let (tray_tx, tray_rx) = std::sync::mpsc::channel();
         // Controls come in on the same port as later launches.
@@ -977,6 +983,7 @@ impl App {
             settle_until: None,
             quitting: false,
             close_dialog: false,
+            fork_notice,
             setup_open,
             edit_return: None,
             nav: nav::History::default(),
@@ -1559,6 +1566,7 @@ impl eframe::App for App {
             || self.link_dialog.is_some()
             || self.confirm_reset
             || self.close_dialog
+            || self.fork_notice
             || self.setup_open
             || self.show_keys.is_some()
             || ctx.memory(|m| m.top_modal_layer().is_some())
@@ -1610,6 +1618,7 @@ impl eframe::App for App {
         self.free_up_dialog(&ctx);
         self.link_dialog(&ctx);
         self.close_dialog(&ctx);
+        self.fork_notice(&ctx);
         self.keys_dialog(&ctx);
         self.go_live_dialog(&ctx);
         // Presets and scenes (the Sources page's, and the recorder's menu's).
@@ -2175,6 +2184,37 @@ impl App {
         }
     }
 }
+
+impl App {
+    /// Shown once, at the first launch: Vibe Clip is HasteClip's work, and
+    /// donations should go to its developer.
+    fn fork_notice(&mut self, ctx: &egui::Context) {
+        if !self.fork_notice {
+            return;
+        }
+        let (mut donate, mut close) = (false, false);
+        let modal = ui_kit::dialog(ctx, "fork_notice", 440.0, |ui| {
+            ui_kit::dialog_title(ui, "Vibe Clip is a fork of HasteClip");
+            ui_kit::dialog_text(ui, "Nearly all of Vibe Clip (the recorder, frame blending, the editor, the player and the library) is HasteClip, made by Kaillr. Vibe Clip is phsrp's copy of it with a few changes. The ideas and the work behind it are Kaillr's, not phsrp's.");
+            ui.add_space(6.0);
+            ui_kit::dialog_text(ui, "If you like Vibe Clip, please support the original developer.");
+            ui_kit::dialog_buttons(ui, |ui| {
+                donate = ui.add(ui_kit::button("Donate to Kaillr", true)).clicked();
+                close = ui.add(ui_kit::button("Close", false).ghost()).clicked();
+            });
+        });
+        if donate {
+            ctx.open_url(egui::OpenUrl::new_tab(KAILLR_KOFI));
+        }
+        if donate || close || modal.dismissed() {
+            self.fork_notice = false;
+            self.settings.fork_notice_shown = true;
+        }
+    }
+}
+
+/// Where HasteClip's developer takes donations.
+const KAILLR_KOFI: &str = "https://ko-fi.com/kaillr";
 
 // --- Capture status beside the recorder ---
 impl App {

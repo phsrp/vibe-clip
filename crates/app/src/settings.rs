@@ -1664,6 +1664,9 @@ pub struct RecordSettings {
     pub close_to_tray: bool,
     /// The first close asked which (then it just does it).
     pub close_asked: bool,
+    /// The notice that Vibe Clip is a fork of HasteClip (with Kaillr's
+    /// Ko-fi) was shown at launch: once, then it's closed for good.
+    pub fork_notice_shown: bool,
     /// macOS: which time the permissions screen was last shown at launch
     /// ([`crate::setup::SETUP_ROUND`]): it's shown again, once, when a
     /// release needs everyone to allow them again.
@@ -1782,6 +1785,7 @@ impl Default for RecordSettings {
             color_theme: ColorTheme::Default,
             close_to_tray: true,
             close_asked: false,
+            fork_notice_shown: false,
             setup_shown: 0,
             game_titles: GameTitles::default(),
             audio_sources: default_sources(),
