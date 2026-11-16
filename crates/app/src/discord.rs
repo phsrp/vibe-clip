@@ -126,10 +126,11 @@ fn run(rx: mpsc::Receiver<Option<Status>>, connected: Arc<AtomicBool>) {
 
 fn activity(status: &Status) -> Activity<'_> {
     let doing = if status.streaming { "Streaming" } else if status.recording { "Recording" } else { "Clipping" };
-    // As Medal does it: the activity is named after the game ("osu! with
-    // Vibe Clip") instead of the app, so it reads like the game itself.
+    // The activity is named after the game alone ("osu!") instead of the
+    // app, so it reads like the game itself; the line under it says it's
+    // Vibe Clip ("Clipping osu! with Vibe Clip").
     let g = &status.game;
-    let (name, details) = (format!("{} with Vibe Clip", g.name), format!("{doing} {} with Vibe Clip", g.name));
+    let (name, details) = (g.name.clone(), format!("{doing} {} with Vibe Clip", g.name));
     let assets = match g.icon.as_deref() {
         // The game's picture, with Vibe Clip as the badge in its corner.
         Some(icon) => Assets::new().large_image(icon).large_text(g.name.as_str()).small_image(LOGO).small_text("Vibe Clip"),
